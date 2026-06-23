@@ -1,0 +1,10 @@
+node_modules/
+.DS_Store
+*.zip
+.env
+.claude/settings.local.json
+
+# real family data — never committed; only the fictional web/family.json sample is
+web/family.local.json
+web/data.js
+Family Tree*.md

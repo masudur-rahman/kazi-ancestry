@@ -1,0 +1,26 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font-family: 'Spectral', 'Noto Serif Bengali', Georgia, serif;
+  -webkit-font-smoothing: antialiased;
+}
+/* privacy: no text selection / no long-press callout (inputs stay usable) */
+body {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+::selection { background: transparent; }
+button { font-family: inherit; }
+input, textarea {
+  font-family: inherit;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.kz-scroll::-webkit-scrollbar { width: 9px; }
+.kz-scroll::-webkit-scrollbar-thumb { background: #cbb88f; border-radius: 6px; }
+
+@keyframes kzpop { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes kztoast { from { opacity: 0; } to { opacity: 1; } }

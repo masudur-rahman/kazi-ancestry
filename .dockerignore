@@ -1,0 +1,9 @@
+.git
+.gitignore
+*.zip
+tools
+README.md
+Family Tree*.md
+.env
+node_modules
+**/.DS_Store

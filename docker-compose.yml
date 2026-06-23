@@ -1,0 +1,13 @@
+services:
+  web:
+    build:
+      context: .
+      # target arch of where this will RUN (the Debian VM). Override with PLATFORM
+      # in .env: linux/amd64 (default) or linux/arm64.
+      platforms:
+        - ${PLATFORM:-linux/amd64}
+    image: kazi-ancestry:latest
+    container_name: kazi-ancestry
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8080}:80"
