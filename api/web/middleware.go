@@ -5,8 +5,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/masudur-rahman/kazi-ancestry/configs"
 	"github.com/masudur-rahman/kazi-ancestry/infra/logr"
 	"github.com/masudur-rahman/kazi-ancestry/models"
+	"github.com/masudur-rahman/kazi-ancestry/modules/auth"
 
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -25,6 +27,47 @@ func userFromContext(ctx context.Context) *models.User {
 // withUser stores the authenticated user on the request context.
 func withUser(ctx context.Context, u *models.User) context.Context {
 	return context.WithValue(ctx, userCtxKey, u)
+}
+
+// SessionMiddleware resolves the request's user from the session cookie and
+// stores it on the context. When OAuth is not configured (dev mode), every
+// request is treated as an admin so the app is usable without credentials.
+func SessionMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var user *models.User
+		cfg := configs.KaziConfig.Auth
+		if !cfg.Enabled() {
+			user = &models.User{ID: "dev", Email: "dev@local", Name: "Dev", Role: "admin"}
+		} else if c, err := r.Cookie(auth.SessionCookie); err == nil {
+			if s, err := auth.Verify(c.Value, cfg.SessionSecret); err == nil {
+				user = &models.User{ID: s.Email, Email: s.Email, Name: s.Name, Role: s.Role}
+			}
+		}
+		next.ServeHTTP(w, r.WithContext(withUser(r.Context(), user)))
+	})
+}
+
+// RequireAuth rejects anonymous requests.
+func RequireAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if userFromContext(r.Context()) == nil {
+			WriteError(w, http.StatusUnauthorized, "unauthorized", "login required")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// RequireAdmin rejects non-admin requests.
+func RequireAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u := userFromContext(r.Context())
+		if u == nil || u.Role != "admin" {
+			WriteError(w, http.StatusForbidden, "forbidden", "admin access required")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // RequestLogger logs the method, path, and status of each request.

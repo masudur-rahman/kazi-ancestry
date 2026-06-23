@@ -120,7 +120,7 @@ const App = {
       expanded, selectedId: null, query: "",
       tx: 80, ty: 60, scale: 0.78,
       layout: "tree", variant: "card", accent: this.ACCENTS[0],
-      user: boot.user || auth.get(),
+      user: boot.user || null,
       suggestions: (boot.suggestions || []).map((row) => this._sugFromRow(row)),
       modal: null, signin: null, form: this.blankForm(),
       showInbox: false, toast: "", menu: false, search: false, colSel: null,
@@ -242,9 +242,6 @@ const App = {
   toast(msg) { this.setState({ toast: msg }); if (this._toastT) clearTimeout(this._toastT); this._toastT = setTimeout(() => this.setState({ toast: "" }), 2600); },
 
   // ---- auth flows ----
-  openSignin() { this.setState({ signin: { name: "", code: "" } }); },
-  closeSignin() { this.setState({ signin: null }); },
-  setSignin(k, v) { this.state.signin = Object.assign({}, this.state.signin, { [k]: v }); },
   // ---- tags ----
   hasTag(p, t) { return !!(p && Array.isArray(p.tags) && p.tags.indexOf(t) !== -1); },
   _migratePerson(p) { if (!Array.isArray(p.tags)) p.tags = []; if (p.star && p.tags.indexOf("died_young") === -1) p.tags.push("died_young"); if ("star" in p) delete p.star; return p; },
@@ -261,18 +258,13 @@ const App = {
   },
   // clickable name pill used for both the parent row and the children list
   _personPill(pid) { const b = h("button", { onClick: () => this.goTo(pid), style: { padding: "7px 13px", "font-size": "14px", border: "1px solid #d4c096", "border-radius": "20px", background: "#fdf9ee", color: "#3b2f21", cursor: "pointer" } }, this.byId[pid].name); hover(b, "background:#f1e6cb;border-color:#9c4326"); return b; },
-  doSignin() {
-    const f = this.state.signin; if (!f) return;
-    const name = (f.name || "").trim();
-    if (!name) { this.toast("নাম লিখুন"); return; }
-    const code = (f.code || "").trim();
-    if (code && code !== auth.ADMIN_CODE) { this.toast("ভুল কোড"); return; }
-    const user = { name, role: code ? "admin" : "contributor" };
-    auth.set(user);
-    this.setState({ user, signin: null, showInbox: false });
-    this.toast(user.role === "admin" ? "পরিচালক হিসেবে প্রবেশ করেছেন" : "প্রবেশ করেছেন — পরিবর্তন প্রস্তাব হিসেবে যাবে");
+  // Auth is server-side (Google OAuth). Login redirects to the OAuth flow;
+  // logout clears the server session cookie, then reloads so the server
+  // re-renders the login wall (no tree data for anonymous).
+  login() { window.location.href = "/auth/login"; },
+  signOut() {
+    this._api("POST", "/auth/logout").catch(() => {}).then(() => { auth.clear(); window.location.reload(); });
   },
-  signOut() { auth.clear(); this.setState({ user: null, showInbox: false }); this.toast("বের হয়েছেন"); },
 
   // ---- modal ----
   onEdit() { if (!this.canAct()) return; const p = this.byId[this.state.selectedId]; if (!p) return; this.setState({ modal: { kind: "edit", target: p.id, asSuggestion: this.isContrib() }, form: this.formFrom(p) }); },
@@ -671,7 +663,7 @@ const App = {
   account() {
     const accent = this.state.accent, user = this.state.user;
     if (!user) {
-      const b = h("button", { onClick: () => this.openSignin(), style: { padding: "8px 14px", "font-size": "13.5px", border: "1px solid #9c4326", "border-radius": "8px", background: accent, color: "#fbf5e7", cursor: "pointer", "font-weight": "500" } }, "লগ ইন");
+      const b = h("button", { onClick: () => this.login(), style: { padding: "8px 14px", "font-size": "13.5px", border: "1px solid #9c4326", "border-radius": "8px", background: accent, color: "#fbf5e7", cursor: "pointer", "font-weight": "500" } }, "লগ ইন");
       return h("div", { style: { display: "flex", "align-items": "center", gap: "10px", "flex-wrap": "wrap" } }, b);
     }
     const isAdmin = this.isAdmin();
@@ -809,23 +801,6 @@ const App = {
     return h("div", { onMouseDown: () => this.onModalCancel(), style: { position: "absolute", inset: "0", background: "rgba(58,40,20,.34)", "backdrop-filter": "blur(2px)", "z-index": "60", display: "flex", "align-items": "center", "justify-content": "center", padding: "24px" } }, dialog);
   },
 
-  signinModal() {
-    const f = this.state.signin; if (!f) return null;
-    const accent = this.state.accent;
-    const label = (t) => h("label", { style: { "font-size": "12px", "letter-spacing": ".4px", color: "#9c8456", "margin-bottom": "5px", display: "block" } }, t);
-    const name = h("input", Object.assign({ "data-fkey": "signin-name", value: f.name || "", placeholder: "আপনার নাম", style: { width: "100%", padding: "9px 11px", "font-size": "15px", border: "1px solid #cdb988", "border-radius": "8px", background: "#fdf9ee", color: "#3b2f21", outline: "none", "margin-bottom": "14px" } }, this._ime((v) => this.setSignin("name", v))));
-    const code = h("input", { "data-fkey": "signin-code", value: f.code || "", type: "password", placeholder: "শুধু পরিচালক হলে লিখুন", onInput: (e) => this.setSignin("code", e.target.value), style: { width: "100%", padding: "9px 11px", "font-size": "14px", border: "1px solid #cdb988", "border-radius": "8px", background: "#fdf9ee", color: "#3b2f21", outline: "none", "margin-bottom": "8px" } });
-    const save = h("button", { onClick: () => this.doSignin(), style: { padding: "10px 20px", "font-size": "14px", border: "none", "border-radius": "9px", background: accent, color: "#fbf5e7", cursor: "pointer", "font-weight": "600" } }, "লগ ইন");
-    const cancel = h("button", { onClick: () => this.closeSignin(), style: { padding: "10px 18px", "font-size": "14px", border: "1px solid #cdb988", "border-radius": "9px", background: "transparent", color: "#8a6a52", cursor: "pointer" } }, "বাতিল"); hover(cancel, "background:#efe2c2");
-    const dialog = h("div", { onMouseDown: (e) => e.stopPropagation(), style: { width: "400px", "max-width": "100%", background: "linear-gradient(180deg,#fbf6ea,#f6efde)", border: "1px solid #d4c096", "border-radius": "16px", "box-shadow": "0 24px 70px rgba(50,32,12,.4)", padding: "26px 28px", animation: "kzpop .18s ease" } },
-      h("div", { style: { "font-size": "22px", "font-weight": "600" } }, "লগ ইন"),
-      h("div", { style: { "font-size": "13.5px", color: "#9c8456", "margin-top": "4px", "margin-bottom": "20px" } }, "লগইন করা সদস্যরা পরিবর্তনের প্রস্তাব দিতে পারেন, পরিচালক যাচাই করবেন।"),
-      label("নাম"), name,
-      label("পরিচালকের কোড"), code,
-      h("div", { style: { display: "flex", "justify-content": "flex-end", gap: "10px", "margin-top": "20px" } }, cancel, save));
-    return h("div", { onMouseDown: () => this.closeSignin(), style: { position: "absolute", inset: "0", background: "rgba(58,40,20,.34)", "backdrop-filter": "blur(2px)", "z-index": "60", display: "flex", "align-items": "center", "justify-content": "center", padding: "24px" } }, dialog);
-  },
-
   toastEl() { if (!this.state.toast) return null; return h("div", { style: { position: "absolute", bottom: "26px", left: "50%", transform: "translateX(-50%)", background: "#3b2f21", color: "#fbf5e7", padding: "11px 20px", "border-radius": "24px", "font-size": "14px", "box-shadow": "0 8px 24px rgba(40,26,8,.35)", "z-index": "70", animation: "kztoast .2s ease" } }, this.state.toast); },
 
   layoutLayer() {
@@ -862,10 +837,22 @@ const App = {
     if (this.columnsEl) this.columnsEl.style.top = hh + "px";
   },
 
+  // loginView is the wall shown to anonymous visitors (server injected no data).
+  loginView() {
+    const card = h("div", { style: { background: "#fbf6ea", border: "1px solid #cdb988", "border-radius": "14px", padding: "40px 34px", "text-align": "center", "max-width": "360px", "box-shadow": "0 8px 30px rgba(60,46,33,.15)" } },
+      h("div", { style: { "font-size": "13px", "letter-spacing": "2px", color: "#9c4326", "margin-bottom": "10px" } }, "কাজী বংশলতিকা"),
+      h("h1", { style: { "font-size": "22px", color: "#3b2f21", margin: "0 0 8px", "font-weight": "600" } }, "প্রবেশ করুন"),
+      h("p", { style: { "font-size": "13.5px", color: "#5c4a2c", margin: "0 0 24px", "line-height": "1.6" } }, "পরিবারের সদস্যরা গুগল দিয়ে প্রবেশ করে বংশলতিকা দেখতে পারবেন।"),
+      h("button", { onClick: () => this.login(), style: { padding: "11px 22px", "font-size": "15px", border: "1px solid #9c4326", "border-radius": "9px", background: "#9c4326", color: "#fbf5e7", cursor: "pointer", "font-weight": "500" } }, "Google দিয়ে প্রবেশ করুন"));
+    return h("div", { style: { position: "fixed", inset: "0", background: "#e9ddc2", display: "flex", "align-items": "center", "justify-content": "center", padding: "20px" } }, card, this.toastEl());
+  },
+
   render() {
     this.columnsEl = null; this.panelEl = null;
-    const frame = h("div", { style: { position: "fixed", inset: "0", background: "#e9ddc2", color: "#3b2f21", overflow: "hidden" } },
-      this.layoutLayer(), this.topbar(), this.searchSheet(), this.bottomLeft(), this.panel(), this.inbox(), this.modal(), this.signinModal(), this.toastEl());
+    const frame = this.state.user
+      ? h("div", { style: { position: "fixed", inset: "0", background: "#e9ddc2", color: "#3b2f21", overflow: "hidden" } },
+          this.layoutLayer(), this.topbar(), this.searchSheet(), this.bottomLeft(), this.panel(), this.inbox(), this.modal(), this.toastEl())
+      : this.loginView();
 
     const a = document.activeElement; let fk = null, ss, se;
     if (a && a.dataset && a.dataset.fkey) { fk = a.dataset.fkey; ss = a.selectionStart; se = a.selectionEnd; }

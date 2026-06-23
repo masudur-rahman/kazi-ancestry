@@ -17,6 +17,7 @@ func NewRouter(webDir string) chi.Router {
 	r := chi.NewRouter()
 	r.Use(RequestLogger)
 	r.Use(middleware.Recoverer)
+	r.Use(SessionMiddleware)
 
 	pg := newPage(webDir)
 
@@ -25,15 +26,25 @@ func NewRouter(webDir string) chi.Router {
 	r.Get("/app.js", pg.serveAsset("app.js"))
 	r.Get("/style.css", pg.serveAsset("style.css"))
 
-	r.Route("/api/v1", func(r chi.Router) {
-		r.Post("/people", HandleCreatePerson)
-		r.Put("/people/{id}", HandleUpdatePerson)
-		r.Delete("/people/{id}", HandleDeletePerson)
+	r.Get("/auth/login", HandleLogin)
+	r.Get("/auth/callback", HandleCallback)
+	r.Post("/auth/logout", HandleLogout)
 
-		r.Post("/suggestions", HandleSubmitSuggestion)
-		r.Get("/suggestions", HandleListSuggestions)
-		r.Post("/suggestions/{id}/approve", HandleApproveSuggestion)
-		r.Post("/suggestions/{id}/reject", HandleRejectSuggestion)
+	r.Route("/api/v1", func(r chi.Router) {
+		// Suggestions may be submitted by any authenticated (allowlisted) user.
+		r.With(RequireAuth).Post("/suggestions", HandleSubmitSuggestion)
+
+		// Direct tree edits and the review inbox are admin-only.
+		r.Group(func(r chi.Router) {
+			r.Use(RequireAdmin)
+			r.Post("/people", HandleCreatePerson)
+			r.Put("/people/{id}", HandleUpdatePerson)
+			r.Delete("/people/{id}", HandleDeletePerson)
+
+			r.Get("/suggestions", HandleListSuggestions)
+			r.Post("/suggestions/{id}/approve", HandleApproveSuggestion)
+			r.Post("/suggestions/{id}/reject", HandleRejectSuggestion)
+		})
 	})
 
 	return r
