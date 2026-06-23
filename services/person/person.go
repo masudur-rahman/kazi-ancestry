@@ -19,10 +19,33 @@ func NewPersonService(repo repos.PersonRepository) *personService {
 	return &personService{repo: repo}
 }
 
-func (s *personService) List() ([]models.Person, error)      { return s.repo.List() }
+func (s *personService) List() ([]models.Person, error)       { return s.repo.List() }
 func (s *personService) Get(id string) (*models.Person, error) { return s.repo.GetByID(id) }
-func (s *personService) Create(p *models.Person) error       { return s.repo.Add(p) }
 func (s *personService) Update(id string, p *models.Person) error { return s.repo.Update(id, p) }
+
+// Create adds a person, generating a stable slug id (shortest unique against
+// existing ids) when one isn't supplied — the runtime path for new people.
+func (s *personService) Create(p *models.Person) error {
+	if p.Tags == "" {
+		p.SetTags(nil)
+	}
+	if p.ID == "" {
+		people, err := s.repo.List()
+		if err != nil {
+			return err
+		}
+		taken := make(map[string]bool, len(people))
+		var parentName string
+		for _, e := range people {
+			taken[e.ID] = true
+			if p.ParentID != nil && e.ID == *p.ParentID {
+				parentName = e.Name
+			}
+		}
+		p.ID = slug.Generate(p.Name, parentName, taken)
+	}
+	return s.repo.Add(p)
+}
 func (s *personService) Delete(id string) error             { return s.repo.Delete(id) }
 func (s *personService) Count() (int, error)                { return s.repo.Count() }
 

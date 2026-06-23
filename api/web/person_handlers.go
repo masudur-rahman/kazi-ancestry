@@ -1,0 +1,81 @@
+package web
+
+import (
+	"net/http"
+
+	"github.com/masudur-rahman/kazi-ancestry/models"
+	"github.com/masudur-rahman/kazi-ancestry/services/all"
+
+	"github.com/go-chi/chi/v5"
+)
+
+// personRequest is the editable shape accepted from the client (tags as array).
+type personRequest struct {
+	ID       string   `json:"id"`
+	ParentID *string  `json:"parentId"`
+	Name     string   `json:"name"`
+	Origin   string   `json:"origin"`
+	Alias    string   `json:"alias"`
+	Spouse   string   `json:"spouse"`
+	Birth    string   `json:"birth"`
+	Death    string   `json:"death"`
+	Note     string   `json:"note"`
+	Tags     []string `json:"tags"`
+}
+
+func (pr personRequest) toModel() models.Person {
+	p := models.Person{
+		ID: pr.ID, ParentID: pr.ParentID, Name: pr.Name,
+		Origin: pr.Origin, Alias: pr.Alias, Spouse: pr.Spouse,
+		Birth: pr.Birth, Death: pr.Death, Note: pr.Note,
+	}
+	p.SetTags(pr.Tags)
+	return p
+}
+
+// HandleCreatePerson adds a person, server-assigning a slug id when absent.
+func HandleCreatePerson(w http.ResponseWriter, r *http.Request) {
+	var req personRequest
+	if err := ReadJSON(r, &req); err != nil {
+		WriteError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if req.Name == "" {
+		WriteError(w, http.StatusBadRequest, "bad_request", "name is required")
+		return
+	}
+	p := req.toModel()
+	p.ID = "" // force server-side slug generation
+	if err := all.GetServices().Person.Create(&p); err != nil {
+		WriteServiceError(w, "create_error", err)
+		return
+	}
+	WriteJSON(w, http.StatusCreated, p)
+}
+
+// HandleUpdatePerson edits an existing person.
+func HandleUpdatePerson(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req personRequest
+	if err := ReadJSON(r, &req); err != nil {
+		WriteError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	p := req.toModel()
+	p.ID = id
+	if err := all.GetServices().Person.Update(id, &p); err != nil {
+		WriteServiceError(w, "update_error", err)
+		return
+	}
+	WriteJSON(w, http.StatusOK, p)
+}
+
+// HandleDeletePerson removes a person.
+func HandleDeletePerson(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := all.GetServices().Person.Delete(id); err != nil {
+		WriteServiceError(w, "delete_error", err)
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]string{"id": id})
+}

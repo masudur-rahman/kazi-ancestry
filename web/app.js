@@ -46,16 +46,13 @@ function hover(el, css) {
   el.addEventListener("mouseleave", () => (el.style.cssText = base));
 }
 
-// ---- store (localStorage; GET/PUT seams marked for a backend) --------------
+// ---- store (localStorage; now only backs the client-side auth stub) --------
+// People and suggestions are server-owned: the tree arrives via the injected
+// page bootstrap, and mutations go through the /api/v1 endpoints.
 const store = {
-  K: { people: "kazi.people.v1", sugg: "kazi.suggestions.v1", seedV: "kazi.seedVersion.v1" },
   read(k, f) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : f; } catch (e) { return f; } },
   write(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
   del(k) { try { localStorage.removeItem(k); } catch (e) {} },
-  getPeople() { return this.read(this.K.people, null); },      // GET /api/people
-  savePeople(p) { this.write(this.K.people, p); },             // PUT /api/people
-  getSuggestions() { return this.read(this.K.sugg, []); },     // GET /api/suggestions
-  saveSuggestions(s) { this.write(this.K.sugg, s); },          // PUT /api/suggestions
 };
 
 // ---- auth stub -------------------------------------------------------------
@@ -77,42 +74,41 @@ const App = {
   // a different glyph for a different tag — no schema/field changes needed.
   TAGS: { died_young: { mark: "✻", color: "#9c4326", label: "অল্প বয়সে মৃত্যু" } },
 
-  // Cheap djb2 string hash -> base36, for cache-busting the localStorage seed.
-  _hash(s) { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); },
-
-  // Loads the seed dataset. family.local.json (gitignored) overrides family.json
-  // (the committed sample / backend artifact) so real data can run locally without
-  // ever being committed. Stashes the raw text on this._seedRaw for cache-busting.
-  async _loadSeed() {
-    for (const f of ["family.local.json", "family.json"]) {
-      try {
-        const r = await fetch(f, { cache: "no-store" });
-        if (r.ok) { const txt = await r.text(); this._seedRaw = txt; return JSON.parse(txt); }
-      } catch (e) {}
-    }
-    this._seedRaw = "[]";
-    return [];
+  // Reads the server-injected initial state from the page (no data fetch). The
+  // tree is embedded only for authorized requests, so there is no data endpoint.
+  _loadBootstrap() {
+    const el = document.getElementById("kazi-bootstrap");
+    if (!el) return { people: [], user: null, suggestions: [] };
+    try { return JSON.parse(el.textContent) || {}; } catch (e) { return { people: [], user: null, suggestions: [] }; }
   },
 
-  async init() {
-    // family.json is the single data source. When its content changes (a new deploy /
-    // data edit), the derived seedV changes too, so we drop the cached localStorage copy
-    // and reseed — otherwise returning visitors keep seeing stale localStorage data.
-    const seed = await this._loadSeed();
-    const seedV = "json:" + this._seedRaw.length + ":" + this._hash(this._seedRaw);
-    let people = store.getPeople();
-    if (!people || store.read(store.K.seedV, null) !== seedV) {
-      people = JSON.parse(JSON.stringify(seed));
-      store.savePeople(people);
-      store.write(store.K.seedV, seedV);
-    }
-    this.people = people;
-    // migrate the legacy boolean `star` into the `tags` array (covers data persisted
-    // in localStorage from older versions, not just the seed files)
-    let changed = false;
-    this.people.forEach((p) => { if ("star" in p || !Array.isArray(p.tags)) { changed = true; this._migratePerson(p); } });
-    if (changed) store.savePeople(this.people);
-    this.nextId = people.reduce((m, p) => Math.max(m, p.id), 0) + 1;
+  // _api wraps the JSON mutation API. Returns parsed body (or null), throws on !ok.
+  _api(method, path, body) {
+    return fetch("/api/v1" + path, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+      credentials: "same-origin",
+    }).then((r) => {
+      if (!r.ok) throw new Error(method + " " + path + " -> " + r.status);
+      return r.status === 204 ? null : r.json().catch(() => null);
+    });
+  },
+  _apiErr(e) { console.error(e); this.toast("সার্ভার ত্রুটি"); },
+
+  // Maps a server suggestion row back to the rich client-side suggestion object.
+  _sugFromRow(row) {
+    let s = {};
+    try { s = JSON.parse(row.payload) || {}; } catch (e) {}
+    s.id = row.id; s.status = row.status;
+    if (row.submittedBy) s.by = row.submittedBy;
+    return s;
+  },
+
+  init() {
+    const boot = this._loadBootstrap();
+    this.people = (boot.people || []);
+    this.people.forEach((p) => { if (!Array.isArray(p.tags)) p.tags = []; });
     this.rebuild();
 
     const expanded = {};
@@ -124,8 +120,8 @@ const App = {
       expanded, selectedId: null, query: "",
       tx: 80, ty: 60, scale: 0.78,
       layout: "tree", variant: "card", accent: this.ACCENTS[0],
-      user: auth.get(),
-      suggestions: store.getSuggestions(),
+      user: boot.user || auth.get(),
+      suggestions: (boot.suggestions || []).map((row) => this._sugFromRow(row)),
       modal: null, signin: null, form: this.blankForm(),
       showInbox: false, toast: "", menu: false, search: false, colSel: null,
       panelH: Math.max(200, Math.round(window.innerHeight * 0.42)), // mobile sheet height (drag-resizable)
@@ -201,10 +197,40 @@ const App = {
   canAct() { return this.isAdmin() || this.isContrib(); },
 
   // ---- mutations ----
-  commit() { store.savePeople(this.people); this.rebuild(); this.render(); },
-  applyEdit(id, fields) { Object.assign(this.byId[id], fields); this.commit(); },
-  addPerson(parentId, fields) { const np = Object.assign({ id: this.nextId++, parentId }, this.sanitize(fields)); this.people.push(np); this.commit(); return np.id; },
-  deletePerson(id) { if (this.childrenOf[id].length) return false; this.people = this.people.filter((p) => p.id !== id); this.commit(); return true; },
+  // commit re-derives indices and re-renders. The server persists each change via
+  // its own endpoint (optimistic UI: apply locally now, sync in the background).
+  commit() { this.rebuild(); this.render(); },
+  applyEdit(id, fields) {
+    Object.assign(this.byId[id], fields); this.commit();
+    this._api("PUT", "/people/" + encodeURIComponent(id), this.byId[id]).catch((e) => this._apiErr(e));
+  },
+  // addPerson inserts with a temporary id, then adopts the server-assigned slug id
+  // on response (see _reId). Returns the temp id so the caller can select/focus it.
+  addPerson(parentId, fields) {
+    const tmp = "tmp-" + Date.now();
+    const np = Object.assign({ id: tmp, parentId: parentId }, this.sanitize(fields));
+    this.people.push(np); this.commit();
+    this._api("POST", "/people", { parentId: parentId, name: np.name, origin: np.origin, alias: np.alias, spouse: np.spouse, birth: np.birth, death: np.death, note: np.note, tags: np.tags })
+      .then((srv) => { if (srv && srv.id) this._reId(tmp, srv); })
+      .catch((e) => this._apiErr(e));
+    return tmp;
+  },
+  deletePerson(id) {
+    if (this.childrenOf[id].length) return false;
+    this.people = this.people.filter((p) => p.id !== id); this.commit();
+    this._api("DELETE", "/people/" + encodeURIComponent(id)).catch((e) => this._apiErr(e));
+    return true;
+  },
+  // _reId swaps a temp add id for the server's canonical slug id across people,
+  // child parent refs, expansion, and selection.
+  _reId(tmp, srv) {
+    const p = this.byId[tmp]; if (!p) return;
+    Object.assign(p, srv);
+    this.people.forEach((c) => { if (c.parentId === tmp) c.parentId = srv.id; });
+    if (this.state.expanded[tmp]) { this.state.expanded[srv.id] = this.state.expanded[tmp]; delete this.state.expanded[tmp]; }
+    if (this.state.selectedId === tmp) this.state.selectedId = srv.id;
+    this.commit();
+  },
   sanitize(f) {
     const t = (v) => (typeof v === "string" ? v.trim() : v);
     return { name: t(f.name) || "অজানা", origin: t(f.origin) || "", alias: t(f.alias) || "", spouse: t(f.spouse) || "", birth: t(f.birth) || "", death: t(f.death) || "", note: t(f.note) || "", tags: Array.isArray(f.tags) ? f.tags.filter((x) => this.TAGS[x]) : [] };
@@ -284,14 +310,31 @@ const App = {
 
   // ---- suggestions ----
   submitSuggestion(s) {
-    s.id = "s" + Date.now() + Math.floor(Math.random() * 1000); s.at = Date.now();
+    s.at = Date.now();
     s.by = (this.state.user && this.state.user.name) || "Anonymous"; s.status = "pending";
-    const list = this.state.suggestions.concat([s]); store.saveSuggestions(list); this.setState({ suggestions: list });
+    const personId = String(s.targetId || s.parentId || "");
+    this._api("POST", "/suggestions", { personId: personId, payload: JSON.stringify(s) })
+      .then((row) => { if (row && row.id) { s.id = row.id; this.setState({ suggestions: this.state.suggestions.concat([s]) }); } })
+      .catch((e) => this._apiErr(e));
   },
-  setStatus(sid, status) { const list = this.state.suggestions.map((s) => (s.id === sid ? Object.assign({}, s, { status }) : s)); store.saveSuggestions(list); this.setState({ suggestions: list }); },
+  setStatus(sid, status) {
+    const list = this.state.suggestions.map((s) => (s.id === sid ? Object.assign({}, s, { status }) : s));
+    this.setState({ suggestions: list });
+    const verb = status === "approved" ? "approve" : "reject";
+    this._api("POST", "/suggestions/" + encodeURIComponent(sid) + "/" + verb).catch((e) => this._apiErr(e));
+  },
   approve(s) { if (s.type === "edit" && this.byId[s.targetId]) this.applyEdit(s.targetId, s.changes); else if (s.type === "add" && this.byId[s.parentId]) this.addPerson(s.parentId, s.fields); this.setStatus(s.id, "approved"); this.toast("অনুমোদন করা হয়েছে"); },
   reject(s) { this.setStatus(s.id, "rejected"); this.toast("বাতিল করা হয়েছে"); },
-  toggleInbox() { this.setState({ showInbox: !this.state.showInbox }); },
+  toggleInbox() {
+    const opening = !this.state.showInbox;
+    this.setState({ showInbox: opening });
+    // Refresh the inbox from the server when an admin opens it.
+    if (opening && this.isAdmin()) {
+      this._api("GET", "/suggestions")
+        .then((rows) => { if (Array.isArray(rows)) this.setState({ suggestions: rows.map((r) => this._sugFromRow(r)) }); })
+        .catch((e) => this._apiErr(e));
+    }
+  },
 
   // ---- colors ----
   hx(hex) { hex = hex.replace("#", ""); if (hex.length === 3) hex = hex.split("").map((c) => c + c).join(""); return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)]; },

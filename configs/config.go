@@ -23,8 +23,9 @@ type DatabaseConfig struct {
 }
 
 type ServerConfig struct {
-	Host string `json:"host" yaml:"host"`
-	Port int    `json:"port" yaml:"port"`
+	Host   string `json:"host" yaml:"host"`
+	Port   int    `json:"port" yaml:"port"`
+	WebDir string `json:"webDir" yaml:"webDir"`
 }
 
 func env(key, def string) string {
@@ -48,8 +49,9 @@ func Load() {
 			},
 		},
 		Server: ServerConfig{
-			Host: env("HTTP_HOST", "0.0.0.0"),
-			Port: 5294,
+			Host:   env("HTTP_HOST", "0.0.0.0"),
+			Port:   5294,
+			WebDir: env("WEB_DIR", "web"),
 		},
 		SeedPath: env("SEED_PATH", "web/family.local.json"),
 	}
