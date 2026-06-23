@@ -1,15 +1,12 @@
 package models
 
-import (
-	"encoding/json"
-	"time"
-)
+import "encoding/json"
 
 // Person is a node in the family tree. Tags is stored as a JSON-encoded string
 // column (styx maps it as TEXT); the API/seed shape exposes it as a string array.
+// req on the text fields makes styx always write them (even ""), so columns never
+// hold SQL NULL and scan cleanly back into Go strings.
 type Person struct {
-	// req on the text fields makes styx always write them (even ""), so columns
-	// never hold SQL NULL and scan cleanly back into Go strings.
 	ID       string  `db:"id,pk" json:"id"`
 	ParentID *string `db:"parent_id" json:"parentId"` // nil = root (stored NULL)
 	Name     string  `db:"name,req" json:"name"`
@@ -21,6 +18,8 @@ type Person struct {
 	Note     string  `db:"note,req" json:"note"`
 	Tags     string  `db:"tags,req" json:"-"` // JSON-encoded []string, e.g. ["died_young"]
 }
+
+func (Person) TableName() string { return "person" }
 
 // TagList decodes the stored Tags JSON into a slice (nil/invalid -> empty).
 func (p Person) TagList() []string {
@@ -52,23 +51,4 @@ func (p Person) MarshalJSON() ([]byte, error) {
 		alias
 		Tags []string `json:"tags"`
 	}{alias(p), p.TagList()})
-}
-
-// User is an authenticated, allowlisted member. Role: viewer|contributor|admin.
-type User struct {
-	ID        string    `db:"id,pk" json:"id"`
-	Email     string    `db:"email,uq req" json:"email"`
-	Name      string    `db:"name" json:"name"`
-	Role      string    `db:"role,req" json:"role"`
-	CreatedAt time.Time `db:"created_at" json:"createdAt"`
-}
-
-// Suggestion is a proposed edit awaiting admin review.
-type Suggestion struct {
-	ID          string    `db:"id,pk" json:"id"`
-	PersonID    string    `db:"person_id" json:"personId"`
-	Payload     string    `db:"payload" json:"payload"` // JSON-encoded edit
-	SubmittedBy string    `db:"submitted_by" json:"submittedBy"`
-	Status      string    `db:"status,req" json:"status"` // pending|approved|rejected
-	CreatedAt   time.Time `db:"created_at" json:"createdAt"`
 }
