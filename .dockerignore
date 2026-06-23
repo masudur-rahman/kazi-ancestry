@@ -1,9 +1,12 @@
 .git
 .gitignore
 *.zip
-tools
-README.md
-Family Tree*.md
+*.md
 .env
-node_modules
+.claude
+.idea
 **/.DS_Store
+web/node_modules
+# real family data — never baked into the image (supply at runtime)
+web/family.local.json
+web/data.local.json

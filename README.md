@@ -1,130 +1,98 @@
 # Kazi Ancestry · কাজী বংশলতিকা
 
-Interactive website for the Kazi family tree. Vanilla-JS port of the Claude
-Design prototype (`Kazi Ancestry.dc.html`) — runs as a plain static site, no
-build step, no framework.
+Interactive website for the Kazi family tree: a vanilla-JS pan/zoom canvas served
+by a small Go backend over Postgres, with Google OAuth and server-side rendering
+of the initial state.
 
 ## Features
 
 - Three layouts:
   - **Tree** — pan/zoom canvas (drag to pan, wheel/pinch to zoom, `+ / − / fit`), node styles Cards · Medallions · Ledger
-  - **Branch** — left→right tree, same pan/zoom canvas; collapsing a node keeps it fixed on screen (no reflow jump)
-  - **Columns** — Finder-style lineage explorer; drilled columns persist when the detail panel is closed
-- 5 accent colors
-- Detail panel: origin, alias, spouse, birth/death, parent, descendants, notes
+  - **Branch** — left→right tree on the same canvas; collapsing a node keeps it fixed on screen (no reflow jump)
+  - **Columns** — Finder-style lineage explorer
+- Detail panel: origin, alias, spouse, birth/death, parent, descendants, notes, tags
 - Search any name → jump to person (expands the path)
-- ✻ = noted in records · *italic* = place of origin
-- **Mobile** (`≤760px`): compact header with a labeled hamburger → full-width
-  dropdown menu (search, layout, node style, expand/collapse, accent, account).
-  Detail panel & review inbox become bottom sheets; in Branch and Columns the
-  layout sits *above* the sheet (master–detail, no overlap) and the sheet is
-  **drag-resizable** (grab the handle to split the screen, both panes follow).
-  Tree supports touch pan + pinch-zoom.
+- ✻ superscript marks a person tagged in records (extensible `tags` registry)
+- Mobile (`≤760px`): floating on-canvas controls, detail/inbox as bottom sheets, touch pan + pinch-zoom
 
-## Roles (auth-driven)
+## Architecture
 
-Roles come from who is signed in — there is no manual role switch:
+The Go server delivers data only to authenticated sessions and never exposes a
+bulk data endpoint — the tree is **server-injected** into the page, not fetched.
+
+```
+main.go                 cmd.Execute()
+cmd/                    cobra: serve, seed (--reseed)
+api/web/                chi router, SSR page injection, JSON mutation API, auth handlers + middleware
+configs/                env config + Postgres connection / schema sync
+modules/auth/           Google OAuth + signed-cookie sessions
+models/                 Person / User / Suggestion (+ TableName, typed errors)
+repos/                  data-access interfaces (+ repos/<entity> SQL impls over styx)
+services/               business-logic interfaces (+ services/<entity> impls, services/all DI)
+pkg/slug/               Bengali→Latin slug ids (shortest-unique)
+infra/logr/             zap logger
+web/                    index.html (shell), app.js (the SPA), style.css, family.json (sample seed)
+```
+
+- **Data delivery:** `GET /` injects the tree as `<script type="application/json">` for authenticated requests only. Anonymous visitors get a **login wall** with no data in the page.
+- **Mutations:** `POST/PUT/DELETE /api/v1/people` (admin), `POST /api/v1/suggestions` (any signed-in user), inbox approve/reject (admin).
+- **Ids** are short readable slugs derived from names (`তাহের আলী কাজী` → `taher`), assigned once and stable; new people are slugged server-side.
+
+## Roles
+
+Roles come from the OAuth allowlist (`ALLOWLIST` / `ADMIN_EMAILS`):
 
 | State | Role | Can |
 |-------|------|-----|
-| Logged out | **viewer** | browse / search / switch layouts only |
-| Signed in | **contributor** | propose edits/adds → go to the review queue as *pending* |
-| Signed in + admin code | **admin** (you) | edit/add/delete directly, review & approve/reject suggestions |
+| Logged out | — | nothing (login wall, no data served) |
+| Allowlisted | **contributor** | browse + propose edits/adds → review queue |
+| Admin email | **admin** | edit/add/delete directly, review & approve/reject suggestions |
 
-Auth is a **localStorage stub**: the admin code is `kazi-admin` (see `auth.ADMIN_CODE`
-in `app.js`). Replace the `auth` object with real OAuth + a server-side admin
-allowlist when the backend lands.
-
-## Privacy
-
-`lockDown()` in `app.js` applies best-effort deterrents: no right-click, no
-copy/selection (form fields excluded), blocked devtools/save/print/view-source
-shortcuts, and the page blurs when hidden (app-switcher / screen-share previews).
-
-**These are deterrents, not real protection.** The OS screenshot key and a phone
-camera can't be blocked, and devtools can't be reliably disabled. The real leak is
-that the whole dataset ships to every client in `data.js` — anyone can read it from
-the Network tab regardless of the UI. **True privacy requires the backend**: gate
-the data behind auth server-side so unauthorized clients never receive it.
-
-## Layout
-
-```
-web/index.html    shell (loads data.js then app.js)
-web/app.js        the whole app (vanilla JS)
-web/style.css     base styles + fonts (Spectral / Noto Serif Bengali)
-web/data.js       window.KAZI_SEED — first-load seed (file:// safe)
-web/family.json   same data as a clean JSON artifact (for the future backend)
-tools/gen.mjs     curated source tree -> data.js + family.json
-```
-
-Data persists in the browser via `localStorage`. `store` in `app.js` has the
-`GET/PUT /api/...` seams marked for swapping in a backend later.
-
-## Regenerate data
-
-Edit the curated tree in `tools/gen.mjs`, then:
-
-```sh
-node tools/gen.mjs
-```
+When `GOOGLE_CLIENT_ID`/`SECRET` are unset the server runs in **open dev mode**
+(no wall, every request is admin) so it is usable without credentials.
 
 ## Run locally
 
+Needs Postgres. With a local server running:
+
 ```sh
-python3 tools/serve.py        # http://localhost:8000, no-cache (edits show on reload)
+# init the tree (idempotent); reads web/family.local.json, else the sample
+go run . seed
+# serve
+go run . serve            # http://localhost:5294
 ```
 
-Or plain `cd web && python3 -m http.server 8000` (caches assets — hard-reload after
-edits). Opening `web/index.html` directly (`file://`) also works — the seed is
-embedded in `data.js`, no fetch required.
+Config is env-driven (`PGHOST`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `GOOGLE_CLIENT_ID`, …) — see `.env.example`.
+
+## Data
+
+- `web/family.json` — committed **fictional sample**, the seed fallback.
+- `web/family.local.json` — your **real data** (gitignored, never committed or baked into the image). When present it overrides the sample.
+- The server seeds the DB on first boot when empty. To regenerate ids after editing names:
+
+```sh
+go run . seed --reseed    # clears the person table and reimports with fresh ids
+```
 
 ## Docker
 
-Static site served by **nginx** (listens on port 80). `nginx:alpine` is multi-arch,
-so the same Dockerfile builds for amd64 or arm64.
+`docker compose` provisions Postgres + the Go app (multi-stage static build).
 
 ```sh
-cp .env.example .env
-```
-
-### Run locally (on the Mac)
-
-```sh
-PLATFORM=linux/arm64 docker compose up -d --build   # native on Apple silicon
+cp .env.example .env      # set PGPASSWORD, Google OAuth, SESSION_SECRET, allowlist
+docker compose up -d --build
 # open http://localhost:8080
 ```
 
-### Build on Mac (arm64) → run on a Debian VM
-
-Cross-build for the VM's architecture and export a loadable tar:
-
-```sh
-tools/build.sh                      # default linux/amd64 -> kazi-ancestry-amd64.tar
-# or: PLATFORM=linux/arm64 tools/build.sh
-```
-
-Copy it over and run on the VM:
-
-```sh
-scp kazi-ancestry-amd64.tar user@vm:~
-ssh user@vm 'docker load -i kazi-ancestry-amd64.tar \
-  && docker run -d --restart unless-stopped -p 80:80 --name kazi-ancestry kazi-ancestry:latest'
-```
-
-Point the domain's A record at the VM and open it at `http://your-domain` (port 80).
-Cross-build uses buildx + QEMU, which ship with Docker Desktop.
-
-> TLS/HTTPS is intentionally not in the container — terminate it on the VM
-> (host nginx, Cloudflare, etc.) in front of port 80.
-
-Rebuild after editing `web/`: re-run `tools/build.sh` (VM) or `docker compose up -d --build` (local).
+The image ships the SPA + the sample seed only. To run real data, mount your
+`web/family.local.json` (see the commented volume in `docker-compose.yml`) and
+set `SEED_PATH`. Terminate TLS in front of the container (host nginx, Cloudflare,
+etc.); set `OAUTH_REDIRECT_URL` to the public `https://…/auth/callback`.
 
 ## Roadmap
 
-- [x] Static interactive tree (Tree / Branch / Columns)
-- [x] Suggestion + admin approval flow (currently localStorage)
-- [x] Auth-driven roles (viewer / contributor / admin) — stubbed
-- [ ] Go backend + persistent store (replace the `store` adapter in `app.js`)
-- [ ] Real auth replacing the `auth` stub (OAuth + admin allowlist)
-```
+- [x] Go backend + Postgres (styx) replacing the static/localStorage store
+- [x] SSR state injection — no public data endpoint
+- [x] Google OAuth login wall with allowlist roles
+- [ ] Apply approved suggestions transactionally; audit trail
+- [ ] Convert repo to the expense-tracker-bot conventions (Makefile/Docker/CI/lint, viper config)

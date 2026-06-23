@@ -1,13 +1,53 @@
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: kazi-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PGDATABASE:-kazi}
+      POSTGRES_USER: ${PGUSER:-kazi}
+      POSTGRES_PASSWORD: ${PGPASSWORD:-kazi}
+    volumes:
+      - kazi-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-kazi} -d ${PGDATABASE:-kazi}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   web:
     build:
       context: .
-      # target arch of where this will RUN (the Debian VM). Override with PLATFORM
-      # in .env: linux/amd64 (default) or linux/arm64.
       platforms:
         - ${PLATFORM:-linux/amd64}
     image: kazi-ancestry:latest
     container_name: kazi-ancestry
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      PGDATABASE: ${PGDATABASE:-kazi}
+      PGUSER: ${PGUSER:-kazi}
+      PGPASSWORD: ${PGPASSWORD:-kazi}
+      PGSSLMODE: disable
+      ENV: ${ENV:-production}
+      # Auth (leave the Google vars empty to run in open dev mode):
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      OAUTH_REDIRECT_URL: ${OAUTH_REDIRECT_URL:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      ALLOWLIST: ${ALLOWLIST:-}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      # Real data: mount your family.local.json and point SEED_PATH at it.
+      SEED_PATH: ${SEED_PATH:-web/family.json}
     ports:
-      - "${HTTP_PORT:-8080}:80"
+      - "${HTTP_PORT:-8080}:5294"
+    # To seed real data, uncomment and mount your gitignored file:
+    # volumes:
+    #   - ./web/family.local.json:/app/web/family.local.json:ro
+
+volumes:
+  kazi-pgdata:
