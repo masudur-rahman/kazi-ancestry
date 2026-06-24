@@ -3,6 +3,8 @@ node_modules/
 *.zip
 .env
 .claude/settings.local.json
+bin/
+coverage.out
 
 # local config may hold secrets; commit only the example
 .configs/*

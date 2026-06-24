@@ -12,6 +12,14 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/kazi-ancestry .
 
 # --- run ---------------------------------------------------------------------
 FROM alpine:3.20
+ARG VERSION=dev
+ARG BUILD_DATE=unknown
+ARG GIT_COMMIT=unknown
+LABEL org.opencontainers.image.title="kazi-ancestry" \
+      org.opencontainers.image.version="$VERSION" \
+      org.opencontainers.image.created="$BUILD_DATE" \
+      org.opencontainers.image.revision="$GIT_COMMIT" \
+      org.opencontainers.image.source="https://github.com/masudur-rahman/kazi-ancestry"
 RUN apk add --no-cache ca-certificates && adduser -D -u 10001 kazi
 WORKDIR /app
 

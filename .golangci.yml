@@ -1,0 +1,57 @@
+# golangci-lint configuration (v2)
+# Docs: https://golangci-lint.run/usage/configuration/
+version: "2"
+
+linters:
+  enable:
+    - gosec
+    - misspell
+  disable:
+    - depguard
+    - errorlint
+  settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprintln
+        - fmt.Fprintf
+        - fmt.Fprint
+    gosec:
+      excludes:
+        - G107
+        - G114
+        - G204
+        - G304
+        - G306
+    govet:
+      disable:
+        - fieldalignment
+        - shadow
+    misspell:
+      locale: US
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - errcheck
+          - gosec
+        path: _test\.go
+    paths:
+      - vendor
+      - hack
+      - third_party$
+      - builtin$
+      - examples$
+
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
