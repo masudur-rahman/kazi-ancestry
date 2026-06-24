@@ -14,6 +14,8 @@ import (
 	"github.com/masudur-rahman/kazi-ancestry/api/web"
 	"github.com/masudur-rahman/kazi-ancestry/configs"
 	"github.com/masudur-rahman/kazi-ancestry/infra/logr"
+	"github.com/masudur-rahman/kazi-ancestry/infra/metrics"
+	"github.com/masudur-rahman/kazi-ancestry/models"
 	"github.com/masudur-rahman/kazi-ancestry/services/all"
 
 	"github.com/spf13/cobra"
@@ -35,6 +37,13 @@ var serveCmd = &cobra.Command{
 			logr.DefaultLogger.Infof("person table ready: %d people", n)
 		}
 
+		// Scrape-time domain gauges (people / suggestions by status).
+		svc := all.GetServices()
+		metrics.RegisterDomain(
+			svc.Person.Count,
+			func() ([]models.Suggestion, error) { return svc.Suggestion.List() },
+		)
+
 		cfg := configs.KaziConfig.Server
 		addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 		router := web.NewRouter(cfg.WebDir)
@@ -50,11 +59,29 @@ var serveCmd = &cobra.Command{
 			}
 		}()
 
+		// Metrics on a separate internal port (not routed by the public Gateway).
+		var metricsSrv *http.Server
+		if cfg.MetricsPort > 0 {
+			mux := http.NewServeMux()
+			mux.Handle("/metrics", metrics.Handler())
+			mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+			metricsSrv = &http.Server{Addr: fmt.Sprintf("%s:%d", cfg.Host, cfg.MetricsPort), Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+			go func() {
+				logr.DefaultLogger.Infof("metrics listening on %s", metricsSrv.Addr)
+				if err := metricsSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+					logr.DefaultLogger.Errorf("metrics server error: %v", err)
+				}
+			}()
+		}
+
 		<-stopCtx.Done()
 		logr.DefaultLogger.Infof("shutting down")
 		shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutCtx)
+		if metricsSrv != nil {
+			_ = metricsSrv.Shutdown(shutCtx)
+		}
 	},
 }
 

@@ -3,6 +3,7 @@ package web
 import (
 	"net/http"
 
+	"github.com/masudur-rahman/kazi-ancestry/infra/metrics"
 	"github.com/masudur-rahman/kazi-ancestry/models"
 	"github.com/masudur-rahman/kazi-ancestry/services/all"
 
@@ -27,6 +28,7 @@ func HandleSubmitSuggestion(w http.ResponseWriter, r *http.Request) {
 		WriteServiceError(w, "submit_error", err)
 		return
 	}
+	metrics.SuggestionSubmitted()
 	WriteJSON(w, http.StatusCreated, sug)
 }
 
@@ -62,6 +64,7 @@ func HandleApproveSuggestion(w http.ResponseWriter, r *http.Request) {
 		WriteServiceError(w, "approve_error", err)
 		return
 	}
+	metrics.SuggestionResolved("approved")
 	WriteJSON(w, http.StatusOK, map[string]string{"id": id, "status": "approved"})
 }
 
@@ -71,5 +74,6 @@ func HandleRejectSuggestion(w http.ResponseWriter, r *http.Request) {
 		WriteServiceError(w, "reject_error", err)
 		return
 	}
+	metrics.SuggestionResolved("rejected")
 	WriteJSON(w, http.StatusOK, map[string]string{"id": id, "status": "rejected"})
 }

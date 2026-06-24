@@ -31,6 +31,6 @@ COPY web/ /app/web/
 # The app falls back to built-in defaults + env when .configs/ is absent.
 
 USER kazi
-EXPOSE 5294
+EXPOSE 5294 9090
 ENTRYPOINT ["kazi-ancestry"]
 CMD ["serve"]

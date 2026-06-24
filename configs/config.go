@@ -40,9 +40,10 @@ type DatabaseConfig struct {
 }
 
 type ServerConfig struct {
-	Host   string `json:"host" yaml:"host"`
-	Port   int    `json:"port" yaml:"port"`
-	WebDir string `json:"webDir" yaml:"webDir"`
+	Host        string `json:"host" yaml:"host"`
+	Port        int    `json:"port" yaml:"port"`
+	WebDir      string `json:"webDir" yaml:"webDir"`
+	MetricsPort int    `json:"metricsPort" yaml:"metricsPort"` // 0 disables the metrics server
 }
 
 // AuthConfig holds Google OAuth + allowlist settings. An empty GoogleClientID
@@ -106,7 +107,7 @@ func defaults() Configuration {
 			Name: "kazi", Host: "localhost", Port: "5432",
 			User: "postgres", Password: "postgres", SSLMode: "disable",
 		}},
-		Server:   ServerConfig{Host: "0.0.0.0", Port: 5294, WebDir: "web"},
+		Server:   ServerConfig{Host: "0.0.0.0", Port: 5294, WebDir: "web", MetricsPort: 9090},
 		Auth:     AuthConfig{RedirectURL: "http://localhost:5294/auth/callback", SessionSecret: "dev-insecure-secret-change-me"},
 		SeedPath: "web/family.local.json",
 	}
@@ -125,6 +126,7 @@ func applyEnvOverrides(cfg *Configuration) {
 
 	setStr(&cfg.Server.Host, "HTTP_HOST")
 	setInt(&cfg.Server.Port, "HTTP_PORT_INTERNAL")
+	setInt(&cfg.Server.MetricsPort, "METRICS_PORT")
 	setStr(&cfg.Server.WebDir, "WEB_DIR")
 
 	setStr(&cfg.Auth.GoogleClientID, "GOOGLE_CLIENT_ID")

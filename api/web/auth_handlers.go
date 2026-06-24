@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/masudur-rahman/kazi-ancestry/configs"
+	"github.com/masudur-rahman/kazi-ancestry/infra/metrics"
 	"github.com/masudur-rahman/kazi-ancestry/modules/auth"
 
 	"golang.org/x/oauth2"
@@ -56,10 +57,12 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
 
 	user, err := auth.FetchUser(r.Context(), r.URL.Query().Get("code"))
 	if err != nil {
+		metrics.LoginResult("error")
 		WriteError(w, http.StatusBadGateway, "oauth_error", err.Error())
 		return
 	}
 	if !user.VerifiedEmail {
+		metrics.LoginResult("denied")
 		WriteError(w, http.StatusForbidden, "unverified", "email is not verified")
 		return
 	}
@@ -70,6 +73,7 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
 	role := configs.KaziConfig.Auth.RoleFor(user.Email)
 	sess := auth.NewSession(user.Email, user.Name, role)
 	setSessionCookie(w, auth.Sign(sess, configs.KaziConfig.Auth.SessionSecret), auth.MaxAgeSeconds())
+	metrics.LoginResult("success")
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 

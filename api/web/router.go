@@ -3,6 +3,8 @@ package web
 import (
 	"net/http"
 
+	"github.com/masudur-rahman/kazi-ancestry/infra/metrics"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -16,6 +18,7 @@ import (
 func NewRouter(webDir string) chi.Router {
 	r := chi.NewRouter()
 	r.Use(RequestLogger)
+	r.Use(metrics.Middleware)
 	r.Use(middleware.Recoverer)
 	r.Use(SessionMiddleware)
 

@@ -45,6 +45,11 @@ service:
   port: 80          # service port
   targetPort: 5294  # container port (the app listens here)
 
+# Prometheus metrics are served on a separate internal port (/metrics), exposed
+# on the Service but NOT routed by the Gateway — scrapeable only in-cluster.
+metrics:
+  port: 9090
+
 # ── Application config (non-secret → ConfigMap) ───────────────────────────────
 config:
   env: production          # ENV (production enables zap prod logging)
@@ -139,8 +144,7 @@ networkPolicy:
   ingress: []   # list of NetworkPolicyIngressRule (e.g. from your gateway namespace)
   egress: []    # list of NetworkPolicyEgressRule (e.g. to your Postgres host)
 
-# Prometheus Operator ServiceMonitor. NOTE: the app does not expose /metrics yet —
-# this is a placeholder for when it does.
+# Prometheus Operator ServiceMonitor — scrapes the internal metrics port.
 serviceMonitor:
   enabled: false
   path: /metrics
