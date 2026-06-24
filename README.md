@@ -62,7 +62,9 @@ go run . seed
 go run . serve            # http://localhost:5294
 ```
 
-Config is env-driven (`PGHOST`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `GOOGLE_CLIENT_ID`, …) — see `.env.example`.
+Config precedence is **defaults < `config.yaml` < environment**. Put non-secret
+settings in `config.yaml` (or `--config path`); pass credentials via env, which
+overrides the file. See `config.yaml` and `.env.example`.
 
 ## Data
 

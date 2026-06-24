@@ -22,4 +22,5 @@ func Execute() {
 
 func init() {
 	cobra.OnInitialize(configs.Load)
+	rootCmd.PersistentFlags().StringVar(&configs.CfgFile, "config", "", "path to YAML config file (default: $CONFIG_FILE or config.yaml)")
 }

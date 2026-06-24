@@ -1,0 +1,32 @@
+# Kazi Ancestry configuration.
+# Precedence: built-in defaults < this file < environment variables.
+# Keep secrets (passwords, client secret, session secret) OUT of this file in
+# real deployments — pass them via env, which overrides whatever is set here.
+
+database:
+  postgres:
+    name: kazi
+    host: localhost
+    port: "5432"
+    user: postgres
+    password: postgres      # override with PGPASSWORD in production
+    sslmode: disable
+
+server:
+  host: 0.0.0.0
+  port: 5294
+  webDir: web
+
+auth:
+  # Leave googleClientId/googleClientSecret empty to run in open dev mode
+  # (no login wall, every request is admin). Set them to enable Google OAuth.
+  googleClientId: ""
+  googleClientSecret: ""      # prefer GOOGLE_CLIENT_SECRET env
+  redirectUrl: http://localhost:5294/auth/callback
+  sessionSecret: ""          # prefer SESSION_SECRET env
+  allowlist: []              # emails -> contributors
+  admins: []                # emails -> admins
+
+# Seed source on first boot (when the DB is empty). Real data lives in the
+# gitignored web/family.local.json; the committed web/family.json is a sample.
+seedPath: web/family.local.json

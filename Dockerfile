@@ -19,6 +19,8 @@ COPY --from=build /out/kazi-ancestry /usr/local/bin/kazi-ancestry
 # Ship the SPA + the fictional sample as the seed fallback. Real data is supplied
 # at runtime (mount web/family.local.json or set SEED_PATH) and is never baked in.
 COPY web/ /app/web/
+# Base config; env (compose) overrides secrets/credentials at runtime.
+COPY config.yaml /app/config.yaml
 
 USER kazi
 EXPOSE 5294
