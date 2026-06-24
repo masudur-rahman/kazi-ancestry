@@ -23,7 +23,16 @@ type Configuration struct {
 	Database DatabaseConfig `json:"database" yaml:"database"`
 	Server   ServerConfig   `json:"server" yaml:"server"`
 	Auth     AuthConfig     `json:"auth" yaml:"auth"`
+	Privacy  PrivacyConfig  `json:"privacy" yaml:"privacy"`
 	SeedPath string         `json:"seedPath" yaml:"seedPath"`
+}
+
+// PrivacyConfig controls how much of the tree anonymous guests can see.
+// Dormant by default — flip GuestNamesOnly later to enforce it without code changes.
+type PrivacyConfig struct {
+	// GuestNamesOnly: when true, logged-out guests receive only names (and the
+	// parent links needed to draw the tree); all other person fields are hidden.
+	GuestNamesOnly bool `json:"guestNamesOnly" yaml:"guestNamesOnly"`
 }
 
 type DatabaseConfig struct {
@@ -129,6 +138,7 @@ func applyEnvOverrides(cfg *Configuration) {
 		cfg.Auth.Admins = splitList(v)
 	}
 
+	setBool(&cfg.Privacy.GuestNamesOnly, "GUEST_NAMES_ONLY")
 	setStr(&cfg.SeedPath, "SEED_PATH")
 }
 
@@ -149,6 +159,14 @@ func setInt(dst *int, key string) {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			*dst = n
+		}
+	}
+}
+
+func setBool(dst *bool, key string) {
+	if v := os.Getenv(key); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			*dst = b
 		}
 	}
 }

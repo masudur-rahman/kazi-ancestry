@@ -26,4 +26,7 @@ auth:
   admins: []                 # emails that can edit + review
   allowlist: []              # emails that can suggest (others are read-only viewers)
 
+privacy:
+  guestNamesOnly: false      # true -> logged-out guests see only names (tree shape)
+
 seedPath: web/family.local.json

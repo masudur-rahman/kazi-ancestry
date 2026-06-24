@@ -8,9 +8,20 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/masudur-rahman/kazi-ancestry/configs"
 	"github.com/masudur-rahman/kazi-ancestry/models"
 	"github.com/masudur-rahman/kazi-ancestry/services/all"
 )
+
+// namesOnly returns guest-safe copies that keep only the tree shape (id, parent)
+// and the name; every other field is blanked so nothing else reaches the client.
+func namesOnly(people []models.Person) []models.Person {
+	out := make([]models.Person, len(people))
+	for i, p := range people {
+		out[i] = models.Person{ID: p.ID, ParentID: p.ParentID, Name: p.Name, Tags: "[]"}
+	}
+	return out
+}
 
 // bootstrapMarker in index.html is replaced with the injected initial state.
 const bootstrapMarker = "<!--KAZI_BOOTSTRAP-->"
@@ -69,6 +80,11 @@ func (p *page) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, "load_error", err.Error())
 		return
+	}
+	// Optional guest privacy (dormant by default): strip everything but names for
+	// anonymous visitors when configs.Privacy.GuestNamesOnly is enabled.
+	if user == nil && configs.KaziConfig.Privacy.GuestNamesOnly {
+		people = namesOnly(people)
 	}
 	var suggestions []models.Suggestion
 	if user != nil && user.Role == "admin" {
