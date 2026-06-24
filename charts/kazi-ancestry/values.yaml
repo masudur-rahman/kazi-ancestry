@@ -1,0 +1,113 @@
+# Default values for kazi-ancestry.
+# Secrets are intentionally empty here — supply them via a private values file
+# (`-f secrets.yaml`, kept out of git) or a pre-created Secret (see `existingSecret`).
+
+replicaCount: 1
+
+image:
+  repository: masudjuly02/kazi-ancestry
+  # Defaults to the chart appVersion when empty.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  fsGroup: 10001
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+service:
+  type: ClusterIP
+  port: 80          # service port
+  targetPort: 5294  # container port (the app listens here)
+
+# ── Application config (non-secret → ConfigMap) ───────────────────────────────
+config:
+  env: production          # ENV (production enables zap prod logging)
+  guestNamesOnly: false    # privacy: logged-out guests see only names when true
+  admins:                  # emails that can edit + review
+    - masudjuly02@gmail.com
+  allowlist: []            # emails that can suggest (others are read-only viewers)
+  seedPath: ""             # SEED_PATH; empty -> in-image sample (see `seed` below)
+
+# ── Database (NOT provisioned by this chart — point at your Postgres) ──────────
+database:
+  host: ""                 # PGHOST (required)
+  port: "5432"             # PGPORT
+  name: kazi               # PGDATABASE
+  user: postgres           # PGUSER
+  sslmode: require         # PGSSLMODE
+  password: ""             # PGPASSWORD → Secret (or use existingSecret)
+
+# ── Google OAuth ──────────────────────────────────────────────────────────────
+oauth:
+  clientId: ""             # GOOGLE_CLIENT_ID (not secret → ConfigMap)
+  redirectUrl: ""          # OAUTH_REDIRECT_URL; empty -> https://{gateway.hostname}/auth/callback
+  clientSecret: ""         # GOOGLE_CLIENT_SECRET → Secret
+  sessionSecret: ""        # SESSION_SECRET → Secret (openssl rand -base64 32)
+
+# Reference a pre-created Secret (with keys PGPASSWORD, GOOGLE_CLIENT_SECRET,
+# SESSION_SECRET) instead of rendering one from the values above. Recommended
+# for production so secrets never pass through Helm values.
+existingSecret: ""
+
+# ── Gateway API ───────────────────────────────────────────────────────────────
+gateway:
+  enabled: true
+  hostname: family.mrahman.xyz
+  # Attach to an existing (shared) Gateway. Fill name/namespace for your cluster.
+  parentRefs:
+    - name: ""
+      namespace: ""
+      sectionName: ""      # optional listener name
+  # Set true to also create a dedicated Gateway in this release.
+  create: false
+  gatewayClassName: ""     # used only when create: true
+  tls:
+    secretName: ""         # TLS cert secret; used only when create: true
+
+# ── Optional: seed real data on first boot (kept out of the image) ────────────
+# Provide the family.local.json contents; rendered into a Secret, mounted, and
+# SEED_PATH is pointed at it. Leave disabled to seed the in-image sample.
+seed:
+  enabled: false
+  data: ""
+
+# ── Health probes ─────────────────────────────────────────────────────────────
+probes:
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 5
+    periodSeconds: 15
+  readiness:
+    path: /healthz
+    initialDelaySeconds: 3
+    periodSeconds: 10
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

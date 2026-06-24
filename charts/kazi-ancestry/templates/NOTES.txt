@@ -1,0 +1,20 @@
+{{ include "kazi-ancestry.fullname" . }} is deployed.
+
+URL:        https://{{ .Values.gateway.hostname }}
+Image:      {{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}
+Database:   {{ .Values.database.user }}@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }} (external)
+
+{{- if not .Values.database.host }}
+
+WARNING: database.host is empty — set it to your Postgres host.
+{{- end }}
+{{- if and (not .Values.existingSecret) (not .Values.oauth.clientSecret) }}
+
+NOTE: OAuth is not configured (no clientSecret). The app runs in OPEN DEV MODE
+(no login wall, every request is admin). Provide oauth.* + database.password via
+a private values file, or set existingSecret to a pre-created Secret.
+{{- end }}
+
+Check status:
+  kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "kazi-ancestry.fullname" . }}
+  kubectl -n {{ .Release.Namespace }} get httproute {{ include "kazi-ancestry.fullname" . }}

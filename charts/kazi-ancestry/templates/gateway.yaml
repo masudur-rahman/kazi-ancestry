@@ -1,0 +1,22 @@
+{{- if and .Values.gateway.enabled .Values.gateway.create }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ include "kazi-ancestry.fullname" . }}
+  labels:
+    {{- include "kazi-ancestry.labels" . | nindent 4 }}
+spec:
+  gatewayClassName: {{ required "gateway.gatewayClassName is required when gateway.create is true" .Values.gateway.gatewayClassName }}
+  listeners:
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: {{ .Values.gateway.hostname | quote }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: {{ required "gateway.tls.secretName is required when gateway.create is true" .Values.gateway.tls.secretName }}
+      allowedRoutes:
+        namespaces:
+          from: Same
+{{- end }}

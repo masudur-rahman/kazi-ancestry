@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kazi-ancestry.fullname" . }}
+  labels:
+    {{- include "kazi-ancestry.labels" . | nindent 4 }}
+data:
+  ENV: {{ .Values.config.env | quote }}
+  HTTP_HOST: "0.0.0.0"
+  # Database connection (password comes from the Secret).
+  PGHOST: {{ .Values.database.host | quote }}
+  PGPORT: {{ .Values.database.port | quote }}
+  PGDATABASE: {{ .Values.database.name | quote }}
+  PGUSER: {{ .Values.database.user | quote }}
+  PGSSLMODE: {{ .Values.database.sslmode | quote }}
+  # Auth (client secret + session secret come from the Secret).
+  GOOGLE_CLIENT_ID: {{ .Values.oauth.clientId | quote }}
+  OAUTH_REDIRECT_URL: {{ include "kazi-ancestry.redirectUrl" . | quote }}
+  ADMIN_EMAILS: {{ join "," .Values.config.admins | quote }}
+  ALLOWLIST: {{ join "," .Values.config.allowlist | quote }}
+  GUEST_NAMES_ONLY: {{ .Values.config.guestNamesOnly | quote }}
+  {{- $seedPath := .Values.config.seedPath }}
+  {{- if .Values.seed.enabled }}
+  {{- $seedPath = "/app/seed/family.local.json" }}
+  {{- end }}
+  {{- if $seedPath }}
+  SEED_PATH: {{ $seedPath | quote }}
+  {{- end }}
