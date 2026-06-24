@@ -63,22 +63,16 @@ func (p *page) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	user := userFromContext(r.Context())
 
-	// Anonymous requests get the login wall: the shell renders, but no tree data
-	// is embedded — there is nothing to scrape until the user authenticates.
-	var (
-		people      []models.Person
-		suggestions []models.Suggestion
-	)
-	if user != nil {
-		var err error
-		if people, err = all.GetServices().Person.List(); err != nil {
-			WriteError(w, http.StatusInternalServerError, "load_error", err.Error())
-			return
-		}
-		// The review inbox is admin-only.
-		if user.Role == "admin" {
-			suggestions, _ = all.GetServices().Suggestion.List()
-		}
+	// Guest viewing: the tree is injected for everyone (logged-out visitors see it
+	// read-only). The review inbox is still admin-only.
+	people, err := all.GetServices().Person.List()
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "load_error", err.Error())
+		return
+	}
+	var suggestions []models.Suggestion
+	if user != nil && user.Role == "admin" {
+		suggestions, _ = all.GetServices().Suggestion.List()
 	}
 
 	data := bootstrap{People: people, User: user, Suggestions: suggestions}

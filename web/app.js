@@ -123,7 +123,8 @@ const App = {
       user: boot.user || null,
       suggestions: (boot.suggestions || []).map((row) => this._sugFromRow(row)),
       modal: null, signin: null, form: this.blankForm(),
-      showInbox: false, toast: "", menu: false, search: false, colSel: null,
+      showInbox: false, inboxTab: "pending", showMine: false, mine: null,
+      toast: "", menu: false, search: false, colSel: null,
       panelH: Math.max(200, Math.round(window.innerHeight * 0.42)), // mobile sheet height (drag-resizable)
     };
 
@@ -319,12 +320,23 @@ const App = {
   reject(s) { this.setStatus(s.id, "rejected"); this.toast("বাতিল করা হয়েছে"); },
   toggleInbox() {
     const opening = !this.state.showInbox;
-    this.setState({ showInbox: opening });
+    this.setState({ showInbox: opening, showMine: false });
     // Refresh the inbox from the server when an admin opens it.
     if (opening && this.isAdmin()) {
       this._api("GET", "/suggestions")
         .then((rows) => { if (Array.isArray(rows)) this.setState({ suggestions: rows.map((r) => this._sugFromRow(r)) }); })
         .catch((e) => this._apiErr(e));
+    }
+  },
+  // toggleMine opens a contributor's own-suggestions panel, lazy-loading from the server.
+  toggleMine() {
+    const opening = !this.state.showMine;
+    this.setState({ showMine: opening, showInbox: false });
+    if (opening && this.isContrib()) {
+      this.setState({ mine: null });
+      this._api("GET", "/suggestions/mine")
+        .then((rows) => { this.setState({ mine: Array.isArray(rows) ? rows.map((r) => this._sugFromRow(r)) : [] }); })
+        .catch((e) => { this._apiErr(e); this.setState({ mine: [] }); });
     }
   },
 
@@ -666,10 +678,11 @@ const App = {
       const b = h("button", { onClick: () => this.login(), style: { padding: "8px 14px", "font-size": "13.5px", border: "1px solid #9c4326", "border-radius": "8px", background: accent, color: "#fbf5e7", cursor: "pointer", "font-weight": "500" } }, "লগ ইন");
       return h("div", { style: { display: "flex", "align-items": "center", gap: "10px", "flex-wrap": "wrap" } }, b);
     }
-    const isAdmin = this.isAdmin();
+    const role = this.role(), isAdmin = role === "admin", isContrib = role === "contributor";
+    const badge = { admin: ["পরিচালক", "#9c4326"], contributor: ["সদস্য", "#5c6b4a"], viewer: ["দর্শক", "#8a6d4a"] }[role] || ["দর্শক", "#8a6d4a"];
     const chip = h("div", { style: { display: "flex", "align-items": "center", gap: "7px", padding: "5px 11px", border: "1px solid #d4c096", "border-radius": "8px", background: "#fbf6ea" } },
       h("span", { style: { "font-size": "13.5px", "font-weight": "600", color: "#3b2f21" } }, user.name),
-      h("span", { style: { "font-size": "10.5px", "letter-spacing": ".5px", color: "#fbf5e7", background: isAdmin ? "#9c4326" : "#5c6b4a", "border-radius": "10px", padding: "2px 7px" } }, isAdmin ? "পরিচালক" : "সদস্য"));
+      h("span", { style: { "font-size": "10.5px", "letter-spacing": ".5px", color: "#fbf5e7", background: badge[1], "border-radius": "10px", padding: "2px 7px" } }, badge[0]));
     const out = h("button", { onClick: () => this.signOut(), style: { padding: "8px 12px", "font-size": "13px", border: "1px solid #cdb988", "border-radius": "8px", background: "#fbf6ea", color: "#5c4a2c", cursor: "pointer" } }, "লগ আউট");
     hover(out, "background:#f1e6cb");
     let review = null;
@@ -678,7 +691,12 @@ const App = {
       review = h("button", { onClick: () => this.toggleInbox(), style: { display: "flex", "align-items": "center", gap: "5px", padding: "8px 13px", "font-size": "13.5px", border: "1px solid " + (pending.length ? "#9c4326" : "#cdb988"), "border-radius": "8px", background: pending.length ? accent : "#fbf6ea", color: pending.length ? "#fbf5e7" : "#5c4a2c", cursor: "pointer", "font-weight": "500" } },
         "যাচাই", pending.length ? h("span", { style: { background: "#fbf5e7", color: "#9c4326", "font-size": "11.5px", "font-weight": "700", "border-radius": "9px", padding: "1px 7px", "margin-left": "2px" } }, pending.length) : null);
     }
-    return h("div", { style: { display: "flex", "align-items": "center", gap: "10px", "flex-wrap": "wrap" } }, chip, review, out);
+    let mine = null;
+    if (isContrib) {
+      mine = h("button", { onClick: () => this.toggleMine(), style: { padding: "8px 13px", "font-size": "13.5px", border: "1px solid #cdb988", "border-radius": "8px", background: "#fbf6ea", color: "#5c4a2c", cursor: "pointer", "font-weight": "500" } }, "আমার প্রস্তাব");
+      hover(mine, "background:#f1e6cb");
+    }
+    return h("div", { style: { display: "flex", "align-items": "center", gap: "10px", "flex-wrap": "wrap" } }, chip, review, mine, out);
   },
 
   bottomLeft() {
@@ -729,6 +747,10 @@ const App = {
           actBtn(admin ? "সন্তান যোগ" : "সন্তানের প্রস্তাব", () => this.onAddChild(), "plain"),
           s.parentId != null ? actBtn(admin ? "ভাইবোন যোগ" : "ভাইবোনের প্রস্তাব", () => this.onAddSibling(), "plain") : null,
           admin && kidIds.length === 0 ? actBtn("মুছুন", () => this.onDelete(), "danger") : null));
+    } else if (!this.state.user) {
+      // Guest: invite login to contribute (read-only otherwise).
+      actions = h("div", { style: { "margin-top": "24px", "padding-top": "18px", "border-top": "1px solid #e6d8b8" } },
+        h("button", { onClick: () => this.login(), style: { padding: "9px 15px", "font-size": "13.5px", border: "1px solid #cdb988", "border-radius": "8px", background: "#fbf6ea", color: "#5c4a2c", cursor: "pointer" } }, "প্রস্তাব দিতে লগ ইন করুন"));
     }
 
     const mobile = this.isMobile();
@@ -748,31 +770,72 @@ const App = {
       actions);
   },
 
-  inbox() {
-    if (!(this.state.showInbox && this.isAdmin())) return null;
+  // _statusBadge renders a colored pill for a resolved/pending suggestion.
+  _statusBadge(status) {
+    const m = { approved: ["অনুমোদিত", "#5c6b4a", "#eef0e6"], rejected: ["বাতিল", "#a8442a", "#f6e7e1"], pending: ["অপেক্ষমাণ", "#a8854a", "#f3ebd6"] }[status] || ["—", "#9c8456", "#f1e6cb"];
+    return h("span", { style: { display: "inline-block", "font-size": "11.5px", "font-weight": "600", color: m[1], background: m[2], border: "1px solid " + m[1] + "55", "border-radius": "20px", padding: "3px 11px" } }, m[0]);
+  },
+
+  // _sugCard renders one suggestion. opts.actions adds approve/reject (admin pending);
+  // otherwise a status badge is shown. opts.showBy=false hides the submitter line.
+  _sugCard(x, opts) {
+    opts = opts || {};
     const accent = this.state.accent;
-    const pendingRaw = this.state.suggestions.filter((x) => x.status === "pending");
-    const resolved = this.state.suggestions.length - pendingRaw.length;
-    const cards = pendingRaw.map((x) => {
-      let rows = [], title = "", typeLabel = "";
-      if (x.type === "edit") { typeLabel = "পরিবর্তন"; title = x.targetName; rows = Object.keys(x.changes).map((k) => ({ field: this.fieldLabel(k), old: this.fmtVal(k, x.before[k]), nw: this.fmtVal(k, x.changes[k]) })); }
-      else { typeLabel = "নতুন ব্যক্তি"; title = x.fields.name + "  ·  " + x.parentName + "-এর অধীনে"; rows = ["origin", "alias", "spouse", "birth", "death", "note"].filter((k) => x.fields[k]).map((k) => ({ field: this.fieldLabel(k), old: "—", nw: this.fmtVal(k, x.fields[k]) })); if (rows.length === 0) rows = [{ field: "নাম", old: "—", nw: x.fields.name }]; }
+    let rows = [], title = "", typeLabel = "";
+    if (x.type === "edit") { typeLabel = "পরিবর্তন"; title = x.targetName; rows = Object.keys(x.changes || {}).map((k) => ({ field: this.fieldLabel(k), old: this.fmtVal(k, x.before ? x.before[k] : ""), nw: this.fmtVal(k, x.changes[k]) })); }
+    else { typeLabel = "নতুন ব্যক্তি"; title = x.fields.name + "  ·  " + x.parentName + "-এর অধীনে"; rows = ["origin", "alias", "spouse", "birth", "death", "note"].filter((k) => x.fields[k]).map((k) => ({ field: this.fieldLabel(k), old: "—", nw: this.fmtVal(k, x.fields[k]) })); if (rows.length === 0) rows = [{ field: "নাম", old: "—", nw: x.fields.name }]; }
+    let footer;
+    if (opts.actions) {
       const approve = h("button", { onClick: () => this.approve(x), style: { flex: "1", padding: "8px 0", "font-size": "13.5px", border: "none", "border-radius": "8px", background: "#5c6b4a", color: "#fbf5e7", cursor: "pointer", "font-weight": "500" } }, "অনুমোদন"); hover(approve, "background:#4d5a3e");
       const reject = h("button", { onClick: () => this.reject(x), style: { flex: "1", padding: "8px 0", "font-size": "13.5px", border: "1px solid #cdb988", "border-radius": "8px", background: "#fdf9ee", color: "#8a6a52", cursor: "pointer" } }, "বাতিল"); hover(reject, "background:#f1e6cb");
-      return h("div", { style: { background: "#fdf9ee", border: "1px solid #e2d2a8", "border-radius": "12px", padding: "15px 16px", "box-shadow": "0 2px 6px rgba(80,55,20,.07)" } },
-        h("div", { style: { display: "flex", "justify-content": "space-between", "align-items": "baseline", gap: "10px" } }, h("span", { style: { "font-size": "11px", "letter-spacing": ".8px", "text-transform": "uppercase", "font-weight": "600", color: accent } }, typeLabel), h("span", { style: { "font-size": "11.5px", color: "#a89468" } }, this.relTime(x.at))),
-        h("div", { style: { "font-size": "17px", "font-weight": "600", margin: "5px 0 2px" } }, title),
-        h("div", { style: { "font-size": "12.5px", color: "#9c8456", "margin-bottom": "11px" } }, "প্রস্তাব দিয়েছেন: " + x.by),
-        h("div", { style: { display: "flex", "flex-direction": "column", gap: "7px" } }, rows.map((r) => h("div", { style: { display: "flex", "align-items": "flex-start", gap: "8px", "font-size": "13.5px", "line-height": "1.45" } }, h("span", { style: { flex: "none", width: "62px", color: "#9c8456", "font-size": "12px", "padding-top": "2px" } }, r.field), h("span", { style: { flex: "1" } }, h("span", { style: { color: "#b07a6a", "text-decoration": "line-through", opacity: ".8" } }, r.old), " ", h("span", { style: { color: "#a89468" } }, "→"), " ", h("span", { style: { color: "#3b2f21", "font-weight": "500" } }, r.nw))))),
-        h("div", { style: { display: "flex", gap: "8px", "margin-top": "14px" } }, approve, reject));
-    });
-    const shell = this.isMobile()
+      footer = h("div", { style: { display: "flex", gap: "8px", "margin-top": "14px" } }, approve, reject);
+    } else {
+      footer = h("div", { style: { "margin-top": "13px" } }, this._statusBadge(x.status));
+    }
+    return h("div", { style: { background: "#fdf9ee", border: "1px solid #e2d2a8", "border-radius": "12px", padding: "15px 16px", "box-shadow": "0 2px 6px rgba(80,55,20,.07)" } },
+      h("div", { style: { display: "flex", "justify-content": "space-between", "align-items": "baseline", gap: "10px" } }, h("span", { style: { "font-size": "11px", "letter-spacing": ".8px", "text-transform": "uppercase", "font-weight": "600", color: accent } }, typeLabel), h("span", { style: { "font-size": "11.5px", color: "#a89468" } }, this.relTime(x.at))),
+      h("div", { style: { "font-size": "17px", "font-weight": "600", margin: "5px 0 2px" } }, title),
+      opts.showBy === false ? null : h("div", { style: { "font-size": "12.5px", color: "#9c8456", "margin-bottom": "11px" } }, "প্রস্তাব দিয়েছেন: " + x.by),
+      h("div", { style: { display: "flex", "flex-direction": "column", gap: "7px" } }, rows.map((r) => h("div", { style: { display: "flex", "align-items": "flex-start", gap: "8px", "font-size": "13.5px", "line-height": "1.45" } }, h("span", { style: { flex: "none", width: "62px", color: "#9c8456", "font-size": "12px", "padding-top": "2px" } }, r.field), h("span", { style: { flex: "1" } }, h("span", { style: { color: "#b07a6a", "text-decoration": "line-through", opacity: ".8" } }, r.old), " ", h("span", { style: { color: "#a89468" } }, "→"), " ", h("span", { style: { color: "#3b2f21", "font-weight": "500" } }, r.nw))))),
+      footer);
+  },
+
+  // shared drawer shell + header for the inbox and my-suggestions panels
+  _drawerShell() {
+    return this.isMobile()
       ? { position: "absolute", left: "0", right: "0", bottom: "0", "max-height": "86%", background: "linear-gradient(180deg,#fbf6ea,#f4ecd9)", "border-top": "1px solid #d4c096", "border-radius": "18px 18px 0 0", "box-shadow": "0 -16px 44px rgba(70,48,18,.2)", "z-index": "55", overflow: "auto", padding: "16px 18px 26px", animation: "kzpop .18s ease" }
       : { position: "absolute", top: "0", right: "0", bottom: "0", width: "420px", background: "linear-gradient(180deg,#fbf6ea,#f4ecd9)", "border-left": "1px solid #d4c096", "box-shadow": "-16px 0 44px rgba(70,48,18,.18)", "z-index": "45", overflow: "auto", padding: "22px 22px 30px" };
-    return h("div", { class: "kz-scroll", style: shell },
-      h("div", { style: { display: "flex", "justify-content": "space-between", "align-items": "center", gap: "10px", "margin-bottom": "4px" } }, h("div", { style: { "font-size": "20px", "font-weight": "600" } }, "প্রস্তাব যাচাই"), h("button", { onClick: () => this.toggleInbox(), style: { border: "none", background: "transparent", color: "#9c8456", "font-size": "22px", cursor: "pointer", "line-height": "1", padding: "0" } }, "×")),
-      h("div", { style: { "font-size": "13px", color: "#9c8456", "margin-bottom": "18px" } }, pendingRaw.length + " টি অপেক্ষমাণ · " + resolved + " টি সম্পন্ন"),
-      pendingRaw.length ? h("div", { style: { display: "flex", "flex-direction": "column", gap: "14px" } }, cards) : h("div", { style: { "text-align": "center", padding: "50px 20px", color: "#a89468" } }, h("div", { style: { "font-size": "15px" } }, "কোনো প্রস্তাব নেই"), h("div", { style: { "font-size": "13px", "margin-top": "6px" } }, "সদস্যদের প্রস্তাব এখানে অনুমোদনের জন্য আসবে।")));
+  },
+  _drawerHeader(title, onClose) {
+    return h("div", { style: { display: "flex", "justify-content": "space-between", "align-items": "center", gap: "10px", "margin-bottom": "16px" } },
+      h("div", { style: { "font-size": "20px", "font-weight": "600" } }, title),
+      h("button", { onClick: onClose, style: { border: "none", background: "transparent", color: "#9c8456", "font-size": "22px", cursor: "pointer", "line-height": "1", padding: "0" } }, "×"));
+  },
+
+  inbox() {
+    if (!(this.state.showInbox && this.isAdmin())) return null;
+    const accent = this.state.accent, tab = this.state.inboxTab;
+    const pending = this.state.suggestions.filter((x) => x.status === "pending");
+    const resolved = this.state.suggestions.filter((x) => x.status !== "pending").sort((a, b) => (b.at || 0) - (a.at || 0));
+    const list = tab === "pending" ? pending : resolved;
+    const tabBtn = (key, label, n) => { const on = tab === key; return h("button", { onClick: () => this.setState({ inboxTab: key }), style: { flex: "1", padding: "8px 0", "font-size": "13.5px", border: "1px solid " + (on ? "#9c4326" : "#cdb988"), "border-radius": "8px", background: on ? accent : "#fbf6ea", color: on ? "#fbf5e7" : "#5c4a2c", cursor: "pointer", "font-weight": on ? "600" : "400" } }, label + " (" + n + ")"); };
+    const empty = h("div", { style: { "text-align": "center", padding: "50px 20px", color: "#a89468" } }, h("div", { style: { "font-size": "15px" } }, tab === "pending" ? "কোনো অপেক্ষমাণ প্রস্তাব নেই" : "কোনো সম্পন্ন প্রস্তাব নেই"));
+    return h("div", { class: "kz-scroll", style: this._drawerShell() },
+      this._drawerHeader("প্রস্তাব যাচাই", () => this.toggleInbox()),
+      h("div", { style: { display: "flex", gap: "8px", "margin-bottom": "18px" } }, tabBtn("pending", "অপেক্ষমাণ", pending.length), tabBtn("resolved", "সম্পন্ন", resolved.length)),
+      list.length ? h("div", { style: { display: "flex", "flex-direction": "column", gap: "14px" } }, list.map((x) => this._sugCard(x, { actions: tab === "pending" }))) : empty);
+  },
+
+  // mySuggestions: a contributor's own submissions with their statuses (read-only).
+  mySuggestions() {
+    if (!(this.state.showMine && this.isContrib())) return null;
+    const list = (this.state.mine || []).slice().sort((a, b) => (b.at || 0) - (a.at || 0));
+    const body = this.state.mine == null
+      ? h("div", { style: { "text-align": "center", padding: "50px 20px", color: "#a89468" } }, "লোড হচ্ছে…")
+      : (list.length ? h("div", { style: { display: "flex", "flex-direction": "column", gap: "14px" } }, list.map((x) => this._sugCard(x, { actions: false, showBy: false }))) : h("div", { style: { "text-align": "center", padding: "50px 20px", color: "#a89468" } }, "আপনি এখনো কোনো প্রস্তাব দেননি।"));
+    return h("div", { class: "kz-scroll", style: this._drawerShell() },
+      this._drawerHeader("আমার প্রস্তাব", () => this.toggleMine()),
+      body);
   },
 
   modal() {
@@ -837,25 +900,11 @@ const App = {
     if (this.columnsEl) this.columnsEl.style.top = hh + "px";
   },
 
-  // loginView is the wall shown to anonymous visitors (server injected no data).
-  loginView() {
-    const card = h("div", { style: { background: "#fbf6ea", border: "1px solid #cdb988", "border-radius": "14px", padding: "40px 34px", "text-align": "center", "max-width": "360px", "box-shadow": "0 8px 30px rgba(60,46,33,.15)" } },
-      h("div", { style: { "font-size": "13px", "letter-spacing": "2px", color: "#9c4326", "margin-bottom": "10px" } }, "কাজী বংশলতিকা"),
-      h("h1", { style: { "font-size": "22px", color: "#3b2f21", margin: "0 0 8px", "font-weight": "600" } }, "প্রবেশ করুন"),
-      h("p", { style: { "font-size": "13.5px", color: "#5c4a2c", margin: "0 0 24px", "line-height": "1.6" } }, "পরিবারের সদস্যরা গুগল দিয়ে প্রবেশ করে বংশলতিকা দেখতে পারবেন।"),
-      h("button", { onClick: () => this.login(), style: { padding: "11px 22px", "font-size": "15px", border: "1px solid #9c4326", "border-radius": "9px", background: "#9c4326", color: "#fbf5e7", cursor: "pointer", "font-weight": "500" } }, "Google দিয়ে প্রবেশ করুন"),
-      h("div", { style: { "margin-top": "24px", "padding-top": "16px", "border-top": "1px solid #e6d8b8", "font-size": "12.5px", color: "#8a6d4a", "line-height": "1.7" } },
-        h("div", {}, "নির্মাণ ও রক্ষণাবেক্ষণে"),
-        h("div", { style: { "font-weight": "600", color: "#5c4a2c" } }, "মাসুদুর রহমান")));
-    return h("div", { style: { position: "fixed", inset: "0", background: "#e9ddc2", display: "flex", "align-items": "center", "justify-content": "center", padding: "20px" } }, card, this.toastEl());
-  },
-
   render() {
     this.columnsEl = null; this.panelEl = null;
-    const frame = this.state.user
-      ? h("div", { style: { position: "fixed", inset: "0", background: "#e9ddc2", color: "#3b2f21", overflow: "hidden" } },
-          this.layoutLayer(), this.topbar(), this.searchSheet(), this.bottomLeft(), this.panel(), this.inbox(), this.modal(), this.toastEl())
-      : this.loginView();
+    // Guest viewing: the tree always renders; logged-out visitors browse read-only.
+    const frame = h("div", { style: { position: "fixed", inset: "0", background: "#e9ddc2", color: "#3b2f21", overflow: "hidden" } },
+      this.layoutLayer(), this.topbar(), this.searchSheet(), this.bottomLeft(), this.panel(), this.inbox(), this.mySuggestions(), this.modal(), this.toastEl());
 
     const a = document.activeElement; let fk = null, ss, se;
     if (a && a.dataset && a.dataset.fkey) { fk = a.dataset.fkey; ss = a.selectionStart; se = a.selectionEnd; }

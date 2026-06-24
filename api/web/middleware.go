@@ -58,6 +58,23 @@ func RequireAuth(next http.Handler) http.Handler {
 	})
 }
 
+// RequireContributor rejects requests that may not contribute: anonymous → 401,
+// authenticated viewers (not on the allowlist) → 403.
+func RequireContributor(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u := userFromContext(r.Context())
+		if u == nil {
+			WriteError(w, http.StatusUnauthorized, "unauthorized", "login required")
+			return
+		}
+		if u.Role != "admin" && u.Role != "contributor" {
+			WriteError(w, http.StatusForbidden, "forbidden", "not allowed to contribute")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // RequireAdmin rejects non-admin requests.
 func RequireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

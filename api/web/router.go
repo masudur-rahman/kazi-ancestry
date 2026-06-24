@@ -31,8 +31,10 @@ func NewRouter(webDir string) chi.Router {
 	r.Post("/auth/logout", HandleLogout)
 
 	r.Route("/api/v1", func(r chi.Router) {
-		// Suggestions may be submitted by any authenticated (allowlisted) user.
-		r.With(RequireAuth).Post("/suggestions", HandleSubmitSuggestion)
+		// Only allowlisted contributors (and admins) may suggest and view their
+		// own submissions; logged-in viewers are read-only.
+		r.With(RequireContributor).Post("/suggestions", HandleSubmitSuggestion)
+		r.With(RequireContributor).Get("/suggestions/mine", HandleMySuggestions)
 
 		// Direct tree edits and the review inbox are admin-only.
 		r.Group(func(r chi.Router) {

@@ -19,6 +19,10 @@ func NewSuggestionService(repo repos.SuggestionRepository) *suggestionService {
 
 func (s *suggestionService) List() ([]models.Suggestion, error) { return s.repo.List() }
 
+func (s *suggestionService) ListMine(email string) ([]models.Suggestion, error) {
+	return s.repo.ListBySubmitter(email)
+}
+
 func (s *suggestionService) Submit(sug *models.Suggestion) error {
 	if sug.ID == "" {
 		sug.ID = uuid.NewString()

@@ -40,6 +40,21 @@ func HandleListSuggestions(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, list)
 }
 
+// HandleMySuggestions returns the suggestions submitted by the current user.
+func HandleMySuggestions(w http.ResponseWriter, r *http.Request) {
+	u := userFromContext(r.Context())
+	if u == nil {
+		WriteError(w, http.StatusUnauthorized, "unauthorized", "login required")
+		return
+	}
+	list, err := all.GetServices().Suggestion.ListMine(u.Email)
+	if err != nil {
+		WriteServiceError(w, "list_error", err)
+		return
+	}
+	WriteJSON(w, http.StatusOK, list)
+}
+
 // HandleApproveSuggestion / HandleRejectSuggestion update a suggestion's status (admin).
 func HandleApproveSuggestion(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")

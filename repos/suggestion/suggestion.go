@@ -39,6 +39,16 @@ func (r *SQLSuggestionRepository) List() ([]models.Suggestion, error) {
 	return out, nil
 }
 
+// ListBySubmitter returns the suggestions submitted by a given user (any status).
+func (r *SQLSuggestionRepository) ListBySubmitter(email string) ([]models.Suggestion, error) {
+	ctx := context.Background()
+	var out []models.Suggestion
+	if err := r.db.Where("submitted_by=?", email).FindMany(ctx, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (r *SQLSuggestionRepository) Add(s *models.Suggestion) error {
 	r.logger.Infow("add suggestion", "id", s.ID, "person", s.PersonID)
 	ctx := context.Background()

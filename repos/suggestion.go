@@ -10,6 +10,7 @@ import (
 type SuggestionRepository interface {
 	WithUnitOfWork(uow styx.UnitOfWork) SuggestionRepository
 	List() ([]models.Suggestion, error)
+	ListBySubmitter(email string) ([]models.Suggestion, error)
 	Add(suggestion *models.Suggestion) error
 	UpdateStatus(id, status string) error
 	Delete(id string) error
