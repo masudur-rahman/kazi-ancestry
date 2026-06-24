@@ -11,7 +11,7 @@ func TestRoleFor(t *testing.T) {
 		"boss@x.com":    "admin",
 		"contrib@x.com": "contributor", // case-insensitive
 		"two@x.com":     "contributor",
-		"nobody@x.com":  "", // denied
+		"nobody@x.com":  "viewer", // logged in, not allowlisted -> read-only
 	}
 	for email, want := range cases {
 		if got := cfg.RoleFor(email); got != want {
@@ -19,9 +19,9 @@ func TestRoleFor(t *testing.T) {
 		}
 	}
 
-	// empty allowlist admits any authenticated account as contributor
-	open := AuthConfig{Admins: []string{"boss@x.com"}}
-	if got := open.RoleFor("anyone@x.com"); got != "contributor" {
-		t.Errorf("open allowlist: got %q, want contributor", got)
+	// empty allowlist: only admins act; everyone else is a viewer
+	closed := AuthConfig{Admins: []string{"boss@x.com"}}
+	if got := closed.RoleFor("anyone@x.com"); got != "viewer" {
+		t.Errorf("empty allowlist: got %q, want viewer", got)
 	}
 }

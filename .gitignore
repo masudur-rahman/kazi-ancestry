@@ -4,6 +4,10 @@ node_modules/
 .env
 .claude/settings.local.json
 
+# local config may hold secrets; commit only the example
+.configs/*
+!.configs/.kazi-ancestry.yaml.example
+
 # real family data — never committed; only the fictional web/family.json sample is
 web/family.local.json
 web/data.js

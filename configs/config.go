@@ -51,8 +51,10 @@ type AuthConfig struct {
 // Enabled reports whether OAuth is configured.
 func (a AuthConfig) Enabled() bool { return a.GoogleClientID != "" && a.GoogleClientSecret != "" }
 
-// RoleFor returns the role for an email: "admin", "contributor", or "" (denied).
-// An empty allowlist admits any authenticated Google account as a contributor.
+// RoleFor returns the role for an email: "admin", "contributor", or "viewer".
+// Admins (and allowlisted contributors) are matched case-insensitively; everyone
+// else who authenticates is a read-only viewer (guests view the tree too, so a
+// non-allowlisted login is never denied — just not granted edit/suggest rights).
 func (a AuthConfig) RoleFor(email string) string {
 	email = strings.ToLower(strings.TrimSpace(email))
 	for _, e := range a.Admins {
@@ -60,15 +62,12 @@ func (a AuthConfig) RoleFor(email string) string {
 			return "admin"
 		}
 	}
-	if len(a.Allowlist) == 0 {
-		return "contributor"
-	}
 	for _, e := range a.Allowlist {
 		if strings.ToLower(strings.TrimSpace(e)) == email {
 			return "contributor"
 		}
 	}
-	return ""
+	return "viewer"
 }
 
 // Load builds KaziConfig with precedence: built-in defaults < YAML file < env.
@@ -78,7 +77,7 @@ func Load() {
 
 	path := CfgFile
 	if path == "" {
-		path = env("CONFIG_FILE", "config.yaml")
+		path = env("CONFIG_FILE", ".configs/.kazi-ancestry.yaml")
 	}
 	if data, err := os.ReadFile(path); err == nil {
 		if err := yaml.Unmarshal(data, &cfg); err != nil {

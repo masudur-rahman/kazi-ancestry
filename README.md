@@ -62,9 +62,22 @@ go run . seed
 go run . serve            # http://localhost:5294
 ```
 
-Config precedence is **defaults < `config.yaml` < environment**. Put non-secret
-settings in `config.yaml` (or `--config path`); pass credentials via env, which
-overrides the file. See `config.yaml` and `.env.example`.
+Config precedence is **defaults < `.configs/.kazi-ancestry.yaml` < environment**.
+Put settings in the YAML (gitignored — safe for secrets; copy from
+`.configs/.kazi-ancestry.yaml.example`), or pass credentials via env, which
+overrides the file. Override the path with `--config`.
+
+### Enable Google OAuth (minimal)
+
+1. Google Cloud Console → APIs & Services → **Credentials** → Create **OAuth client ID** → *Web application*.
+2. Add the redirect URI: `http://localhost:5294/auth/callback` (and your prod `https://…/auth/callback`).
+3. In `.configs/.kazi-ancestry.yaml`, set `auth.googleClientId` / `auth.googleClientSecret` (or env
+   `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`), a random `auth.sessionSecret`, your `auth.admins`,
+   and the `auth.allowlist` emails allowed to suggest.
+
+Leaving the Google fields empty runs in **open dev mode** (no login wall, every request is admin).
+Logged-out visitors can always view the tree read-only; logging in is required to suggest
+(allowlisted) or resolve (admin).
 
 ## Data
 

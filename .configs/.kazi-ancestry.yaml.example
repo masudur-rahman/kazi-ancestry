@@ -1,0 +1,29 @@
+# Copy to .configs/.kazi-ancestry.yaml and fill in. Secrets may also be passed
+# via env (PGPASSWORD, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SESSION_SECRET,
+# ALLOWLIST, ADMIN_EMAILS), which override this file.
+
+database:
+  postgres:
+    name: kazi
+    host: localhost
+    port: "5432"
+    user: postgres
+    password: postgres
+    sslmode: disable
+
+server:
+  host: 0.0.0.0
+  port: 5294
+  webDir: web
+
+auth:
+  # Leave googleClientId/googleClientSecret empty for OPEN DEV MODE (no login
+  # wall; every request is admin). Fill them to enable Google OAuth login.
+  googleClientId: ""
+  googleClientSecret: ""
+  redirectUrl: http://localhost:5294/auth/callback
+  sessionSecret: ""          # openssl rand -base64 32
+  admins: []                 # emails that can edit + review
+  allowlist: []              # emails that can suggest (others are read-only viewers)
+
+seedPath: web/family.local.json

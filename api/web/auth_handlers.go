@@ -64,17 +64,10 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Any authenticated account gets a session; RoleFor decides admin /
+	// contributor / viewer. Non-allowlisted users are read-only viewers, not
+	// denied — guests can view the tree anyway.
 	role := configs.KaziConfig.Auth.RoleFor(user.Email)
-	if role == "" {
-		// authenticated but not on the allowlist
-		setSessionCookie(w, "", -1)
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusForbidden)
-		_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8"><body style="font-family:serif;background:#fbf6ea;color:#5c4a2c;text-align:center;padding:4rem">` +
-			`<h2>প্রবেশাধিকার নেই</h2><p>আপনার অ্যাকাউন্ট অনুমোদিত তালিকায় নেই।</p><p><a href="/">ফিরে যান</a></p></body>`))
-		return
-	}
-
 	sess := auth.NewSession(user.Email, user.Name, role)
 	setSessionCookie(w, auth.Sign(sess, configs.KaziConfig.Auth.SessionSecret), auth.MaxAgeSeconds())
 	http.Redirect(w, r, "/", http.StatusFound)
