@@ -843,7 +843,10 @@ const App = {
       h("div", { style: { "font-size": "13px", "letter-spacing": "2px", color: "#9c4326", "margin-bottom": "10px" } }, "কাজী বংশলতিকা"),
       h("h1", { style: { "font-size": "22px", color: "#3b2f21", margin: "0 0 8px", "font-weight": "600" } }, "প্রবেশ করুন"),
       h("p", { style: { "font-size": "13.5px", color: "#5c4a2c", margin: "0 0 24px", "line-height": "1.6" } }, "পরিবারের সদস্যরা গুগল দিয়ে প্রবেশ করে বংশলতিকা দেখতে পারবেন।"),
-      h("button", { onClick: () => this.login(), style: { padding: "11px 22px", "font-size": "15px", border: "1px solid #9c4326", "border-radius": "9px", background: "#9c4326", color: "#fbf5e7", cursor: "pointer", "font-weight": "500" } }, "Google দিয়ে প্রবেশ করুন"));
+      h("button", { onClick: () => this.login(), style: { padding: "11px 22px", "font-size": "15px", border: "1px solid #9c4326", "border-radius": "9px", background: "#9c4326", color: "#fbf5e7", cursor: "pointer", "font-weight": "500" } }, "Google দিয়ে প্রবেশ করুন"),
+      h("div", { style: { "margin-top": "24px", "padding-top": "16px", "border-top": "1px solid #e6d8b8", "font-size": "12.5px", color: "#8a6d4a", "line-height": "1.7" } },
+        h("div", {}, "নির্মাণ ও রক্ষণাবেক্ষণে"),
+        h("div", { style: { "font-weight": "600", color: "#5c4a2c" } }, "মাসুদুর রহমান")));
     return h("div", { style: { position: "fixed", inset: "0", background: "#e9ddc2", display: "flex", "align-items": "center", "justify-content": "center", padding: "20px" } }, card, this.toastEl());
   },
 
