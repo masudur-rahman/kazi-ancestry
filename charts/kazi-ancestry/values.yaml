@@ -111,3 +111,39 @@ probes:
 nodeSelector: {}
 tolerations: []
 affinity: {}
+
+# ── Optional add-ons (all disabled by default) ────────────────────────────────
+
+# Horizontal Pod Autoscaler.
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 0   # 0 disables the memory metric
+
+# PodDisruptionBudget (set one of minAvailable / maxUnavailable).
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  maxUnavailable: ""
+
+# NetworkPolicy. When enabled, supply ingress/egress rules (empty = deny-all in
+# the listed policyTypes). allowDNS adds an egress rule for cluster DNS.
+networkPolicy:
+  enabled: false
+  policyTypes:
+    - Ingress
+    - Egress
+  allowDNS: true
+  ingress: []   # list of NetworkPolicyIngressRule (e.g. from your gateway namespace)
+  egress: []    # list of NetworkPolicyEgressRule (e.g. to your Postgres host)
+
+# Prometheus Operator ServiceMonitor. NOTE: the app does not expose /metrics yet —
+# this is a placeholder for when it does.
+serviceMonitor:
+  enabled: false
+  path: /metrics
+  interval: 30s
+  scrapeTimeout: 10s
+  labels: {}
