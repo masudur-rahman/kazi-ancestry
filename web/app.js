@@ -46,6 +46,57 @@ function hover(el, css) {
   el.addEventListener("mouseleave", () => (el.style.cssText = base));
 }
 
+// ---- Bengali -> Latin romanizer (mirrors pkg/slug/slug.go) ------------------
+// Best-effort phonetic map so an English query ("masud") matches Bengali names
+// ("মাসুদ", "মাসুদুর রহমান"). Output is lower-cased, tokens space-joined.
+const BN_VOWEL = { "অ": "o", "আ": "a", "ই": "i", "ঈ": "i", "উ": "u", "ঊ": "u", "ঋ": "ri", "এ": "e", "ঐ": "oi", "ও": "o", "ঔ": "ou" };
+const BN_KAR = { "া": "a", "ি": "i", "ী": "i", "ু": "u", "ূ": "u", "ৃ": "ri", "ে": "e", "ৈ": "oi", "ো": "o", "ৌ": "ou" };
+const BN_CONS = {
+  "ক": "k", "খ": "kh", "গ": "g", "ঘ": "gh", "ঙ": "ng",
+  "চ": "ch", "ছ": "chh", "জ": "j", "ঝ": "jh", "ঞ": "n",
+  "ট": "t", "ঠ": "th", "ড": "d", "ঢ": "dh", "ণ": "n",
+  "ত": "t", "থ": "th", "দ": "d", "ধ": "dh", "ন": "n",
+  "প": "p", "ফ": "f", "ব": "b", "ভ": "bh", "ম": "m",
+  "য": "j", "র": "r", "ল": "l", "শ": "sh", "ষ": "sh", "স": "s", "হ": "h",
+  "ৎ": "t", "য়": "y", "ড়": "r", "ঢ়": "rh",
+  "Ɏ": "y", "Ɍ": "r", "Ʀ": "rh",
+};
+const BN_VIRAMA = "্", BN_NUKTA = "়", BN_INHERENT = "o";
+const BN_NUKFOLD = { "য": "Ɏ", "জ": "Ɏ", "ড": "Ɍ", "ঢ": "Ʀ" };
+const BN_SKIP = { "ঁ": 1, "ং": 1, "ঃ": 1, "‌": 1, "‍": 1 };
+const BN_OVERRIDE = { "কাজী": "kazi", "আলী": "ali", "আলি": "ali" };
+function bnToken(tok) {
+  if (BN_OVERRIDE[tok]) return BN_OVERRIDE[tok];
+  const ch = [];
+  for (const r of tok) {
+    if (r === BN_NUKTA && ch.length && BN_NUKFOLD[ch[ch.length - 1]]) { ch[ch.length - 1] = BN_NUKFOLD[ch[ch.length - 1]]; continue; }
+    ch.push(r);
+  }
+  let out = "";
+  for (let i = 0; i < ch.length; i++) {
+    const c = ch[i];
+    if (BN_SKIP[c]) continue;
+    if (BN_VOWEL[c]) { out += BN_VOWEL[c]; continue; }
+    if (BN_KAR[c]) { out += BN_KAR[c]; continue; }
+    if (BN_CONS[c]) {
+      out += BN_CONS[c];
+      if (i + 1 < ch.length) {
+        const nxt = ch[i + 1];
+        if (nxt === BN_VIRAMA) { i++; continue; }   // conjunct: drop inherent, consume virama
+        if (BN_KAR[nxt]) continue;                  // explicit vowel follows
+      }
+      let last = true;
+      for (let j = i + 1; j < ch.length; j++) { if (!BN_SKIP[ch[j]]) { last = false; break; } }
+      if (!last) out += BN_INHERENT;                // bare medial consonant -> inherent vowel
+    }
+  }
+  return out;
+}
+function bnRomanize(name) {
+  return (name || "").split(/\s+/).map((t) => bnToken(t).toLowerCase()).filter(Boolean).join(" ");
+}
+const HAS_LATIN = /[a-z]/i;
+
 // ---- store (localStorage; now only backs the client-side auth stub) --------
 // People and suggestions are server-owned: the tree arrives via the injected
 // page bootstrap, and mutations go through the /api/v1 endpoints.
@@ -603,7 +654,11 @@ const App = {
   _fillSearch() {
     const el = this._searchDrop; if (!el) return;
     const q = this.state.query.trim();
-    const results = q ? this.people.filter((p) => p.name.indexOf(q) !== -1).slice(0, 14) : [];
+    // Latin query -> match against the romanized name ("masud" => মাসুদ / মাসুদুর রহমান);
+    // Bengali query -> substring match on the name as typed. _rkey cached per person.
+    const ql = q.toLowerCase(), latin = HAS_LATIN.test(q);
+    const hit = (p) => latin ? (p._rkey || (p._rkey = bnRomanize(p.name))).indexOf(ql) !== -1 : p.name.indexOf(q) !== -1;
+    const results = q ? this.people.filter(hit).slice(0, 14) : [];
     el.style.display = results.length ? "block" : "none";
     el.replaceChildren.apply(el, results.map((p) => this._searchItem(p)));
   },
