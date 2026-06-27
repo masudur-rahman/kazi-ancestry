@@ -39,9 +39,15 @@ spec:
           args: ["serve"]
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            # Non-secret config is mounted as a file; CONFIG_FILE points at it.
+            - name: CONFIG_FILE
+              value: /etc/kazi-ancestry/kazi-ancestry.yaml
+            # ENV is read directly (not part of the config file) — drives prod logging.
+            - name: ENV
+              value: {{ .Values.config.env | quote }}
           envFrom:
-            - configMapRef:
-                name: {{ include "kazi-ancestry.fullname" . }}
+            # Secrets override the (omitted) credential fields in the config file.
             - secretRef:
                 name: {{ include "kazi-ancestry.secretName" . }}
           ports:
@@ -66,6 +72,9 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
+            - name: config
+              mountPath: /etc/kazi-ancestry
+              readOnly: true
             - name: tmp
               mountPath: /tmp
             {{- if .Values.seed.enabled }}
@@ -74,6 +83,9 @@ spec:
               readOnly: true
             {{- end }}
       volumes:
+        - name: config
+          configMap:
+            name: {{ include "kazi-ancestry.fullname" . }}
         - name: tmp
           emptyDir: {}
         {{- if .Values.seed.enabled }}

@@ -80,9 +80,11 @@ oauth:
 # for production so secrets never pass through Helm values.
 existingSecret: ""
 
-# ── Gateway API ───────────────────────────────────────────────────────────────
+# ── Gateway API (HTTPRoute) ───────────────────────────────────────────────────
+# Disabled by default; enable per-release (and set parentRefs) on clusters running
+# Gateway API. Prefer this over the Ingress below where Gateway API is available.
 gateway:
-  enabled: true
+  enabled: false
   hostname: family.mrahman.xyz
   # Attach to an existing (shared) Gateway. Fill name/namespace for your cluster.
   parentRefs:
@@ -94,6 +96,21 @@ gateway:
   gatewayClassName: ""     # used only when create: true
   tls:
     secretName: ""         # TLS cert secret; used only when create: true
+
+# ── Ingress (alternative to Gateway API; disabled by default) ─────────────────
+# Use on clusters without Gateway API. Don't enable both gateway and ingress.
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: family.mrahman.xyz
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  # - hosts: [family.mrahman.xyz]
+  #   secretName: family-mrahman-xyz-tls
 
 # ── Optional: seed real data on first boot (kept out of the image) ────────────
 # Provide the family.local.json contents; rendered into a Secret, mounted, and

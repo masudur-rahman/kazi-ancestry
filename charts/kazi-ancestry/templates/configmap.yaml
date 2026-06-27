@@ -1,3 +1,7 @@
+{{- $seedPath := .Values.config.seedPath }}
+{{- if .Values.seed.enabled }}
+{{- $seedPath = "/app/seed/family.local.json" }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -5,25 +9,31 @@ metadata:
   labels:
     {{- include "kazi-ancestry.labels" . | nindent 4 }}
 data:
-  ENV: {{ .Values.config.env | quote }}
-  HTTP_HOST: "0.0.0.0"
-  METRICS_PORT: {{ .Values.metrics.port | quote }}
-  # Database connection (password comes from the Secret).
-  PGHOST: {{ .Values.database.host | quote }}
-  PGPORT: {{ .Values.database.port | quote }}
-  PGDATABASE: {{ .Values.database.name | quote }}
-  PGUSER: {{ .Values.database.user | quote }}
-  PGSSLMODE: {{ .Values.database.sslmode | quote }}
-  # Auth (client secret + session secret come from the Secret).
-  GOOGLE_CLIENT_ID: {{ .Values.oauth.clientId | quote }}
-  OAUTH_REDIRECT_URL: {{ include "kazi-ancestry.redirectUrl" . | quote }}
-  ADMIN_EMAILS: {{ join "," .Values.config.admins | quote }}
-  ALLOWLIST: {{ join "," .Values.config.allowlist | quote }}
-  GUEST_NAMES_ONLY: {{ .Values.config.guestNamesOnly | quote }}
-  {{- $seedPath := .Values.config.seedPath }}
-  {{- if .Values.seed.enabled }}
-  {{- $seedPath = "/app/seed/family.local.json" }}
-  {{- end }}
-  {{- if $seedPath }}
-  SEED_PATH: {{ $seedPath | quote }}
-  {{- end }}
+  # The app's native YAML config (CONFIG_FILE points here). Secrets are NOT
+  # rendered here — PGPASSWORD, GOOGLE_CLIENT_SECRET and SESSION_SECRET arrive
+  # via env from the Secret and override these (omitted) fields at load time.
+  kazi-ancestry.yaml: |
+    database:
+      postgres:
+        name: {{ .Values.database.name | quote }}
+        host: {{ .Values.database.host | quote }}
+        port: {{ .Values.database.port | quote }}
+        user: {{ .Values.database.user | quote }}
+        sslmode: {{ .Values.database.sslmode | quote }}
+    server:
+      host: "0.0.0.0"
+      port: {{ .Values.service.targetPort }}
+      webDir: web
+      metricsPort: {{ .Values.metrics.port }}
+    auth:
+      googleClientId: {{ .Values.oauth.clientId | quote }}
+      redirectUrl: {{ include "kazi-ancestry.redirectUrl" . | quote }}
+      admins:
+        {{- toYaml .Values.config.admins | nindent 8 }}
+      allowlist:
+        {{- toYaml .Values.config.allowlist | nindent 8 }}
+    privacy:
+      guestNamesOnly: {{ .Values.config.guestNamesOnly }}
+    {{- if $seedPath }}
+    seedPath: {{ $seedPath | quote }}
+    {{- end }}

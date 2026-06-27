@@ -1,8 +1,17 @@
 {{ include "kazi-ancestry.fullname" . }} is deployed.
 
-URL:        https://{{ .Values.gateway.hostname }}
+{{- $host := .Values.gateway.hostname }}
+{{- if and .Values.ingress.enabled .Values.ingress.hosts }}
+{{- $host = (index .Values.ingress.hosts 0).host }}
+{{- end }}
+URL:        https://{{ $host }}
 Image:      {{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}
 Database:   {{ .Values.database.user }}@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }} (external)
+
+{{- if and (not .Values.gateway.enabled) (not .Values.ingress.enabled) }}
+
+WARNING: no route exposed — enable gateway (HTTPRoute) or ingress to reach the app.
+{{- end }}
 
 {{- if not .Values.database.host }}
 
@@ -17,4 +26,9 @@ a private values file, or set existingSecret to a pre-created Secret.
 
 Check status:
   kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "kazi-ancestry.fullname" . }}
+  {{- if .Values.gateway.enabled }}
   kubectl -n {{ .Release.Namespace }} get httproute {{ include "kazi-ancestry.fullname" . }}
+  {{- end }}
+  {{- if .Values.ingress.enabled }}
+  kubectl -n {{ .Release.Namespace }} get ingress {{ include "kazi-ancestry.fullname" . }}
+  {{- end }}
