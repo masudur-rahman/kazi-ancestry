@@ -1,12 +1,21 @@
 package person
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
-// TestBuildPeople verifies slug assignment + parentId remap over the seed source
-// (web/family.local.json, or the committed sample if absent). It exercises the
-// transliterator and the shortest-unique collision ladder end to end — no DB.
+// TestBuildPeople verifies slug assignment + parentId remap over the seed source.
+// It prefers the real tree (web/family.local.json) when present, else the committed
+// fictional sample (web/family.json) so the test is deterministic in CI, where the
+// real data is gitignored. Exercises the transliterator and the shortest-unique
+// collision ladder end to end — no DB.
 func TestBuildPeople(t *testing.T) {
-	people, err := BuildPeople("../../web/family.local.json")
+	seed := "../../web/family.local.json"
+	if _, err := os.Stat(seed); err != nil {
+		seed = "../../web/family.json" // committed sample (real data is gitignored)
+	}
+	people, err := BuildPeople(seed)
 	if err != nil {
 		t.Fatalf("BuildPeople: %v", err)
 	}
