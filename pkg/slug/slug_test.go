@@ -4,12 +4,12 @@ import "testing"
 
 func TestRomanize(t *testing.T) {
 	cases := map[string]string{
-		"তাহের আলী কাজী": "taher",   // first token unique
+		"তাহের আলী কাজী": "taher", // first token unique
 		"মাসুদ":          "masud",
 		"কণিকা":          "konika",
 		"হাসান":          "hasan",
-		"তানিয়া":        "taniya",  // য়-glide
-		"তৈয়ব আলী কাজী":  "toiyob",
+		"তানিয়া":        "taniya", // য়-glide
+		"তৈয়ব আলী কাজী": "toiyob",
 	}
 	for name, want := range cases {
 		taken := map[string]bool{}

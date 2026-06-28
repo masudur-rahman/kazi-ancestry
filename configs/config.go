@@ -108,7 +108,7 @@ func defaults() Configuration {
 			User: "postgres", Password: "postgres", SSLMode: "disable",
 		}},
 		Server:   ServerConfig{Host: "0.0.0.0", Port: 5294, WebDir: "web", MetricsPort: 9090},
-		Auth:     AuthConfig{RedirectURL: "http://localhost:5294/auth/callback", SessionSecret: "dev-insecure-secret-change-me"},
+		Auth:     AuthConfig{RedirectURL: "http://localhost:5294/auth/callback", SessionSecret: "dev-insecure-secret-change-me"}, //nolint:gosec // G101: dev fallback, overridden by SESSION_SECRET in any real deployment.
 		SeedPath: "web/family.local.json",
 	}
 }

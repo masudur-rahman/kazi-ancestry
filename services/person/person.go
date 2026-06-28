@@ -19,8 +19,8 @@ func NewPersonService(repo repos.PersonRepository) *personService {
 	return &personService{repo: repo}
 }
 
-func (s *personService) List() ([]models.Person, error)       { return s.repo.List() }
-func (s *personService) Get(id string) (*models.Person, error) { return s.repo.GetByID(id) }
+func (s *personService) List() ([]models.Person, error)           { return s.repo.List() }
+func (s *personService) Get(id string) (*models.Person, error)    { return s.repo.GetByID(id) }
 func (s *personService) Update(id string, p *models.Person) error { return s.repo.Update(id, p) }
 
 // Create adds a person, generating a stable slug id (shortest unique against
@@ -46,8 +46,8 @@ func (s *personService) Create(p *models.Person) error {
 	}
 	return s.repo.Add(p)
 }
-func (s *personService) Delete(id string) error             { return s.repo.Delete(id) }
-func (s *personService) Count() (int, error)                { return s.repo.Count() }
+func (s *personService) Delete(id string) error { return s.repo.Delete(id) }
+func (s *personService) Count() (int, error)    { return s.repo.Count() }
 
 // Seed imports the tree if the table is empty. Idempotent.
 func (s *personService) Seed(seedPath string) (int, error) {

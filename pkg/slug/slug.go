@@ -38,7 +38,7 @@ var cons = map[rune]string{
 const (
 	virama   = '্' // ্ hasanta
 	nukta    = '়' // ় combining nukta
-	inherent = "o"      // inherent vowel for a bare medial consonant
+	inherent = "o" // inherent vowel for a bare medial consonant
 )
 
 // base consonant -> placeholder when followed by a nukta
