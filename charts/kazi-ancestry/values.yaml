@@ -113,10 +113,17 @@ ingress:
   #   secretName: family-mrahman-xyz-tls
 
 # ── Optional: seed real data on first boot (kept out of the image) ────────────
-# Provide the family.local.json contents; rendered into a Secret, mounted, and
-# SEED_PATH is pointed at it. Leave disabled to seed the in-image sample.
+# When enabled, the family.local.json is mounted at /app/seed and SEED_PATH points
+# at it. Disabled -> seeds the in-image fictional sample. Provide the data one of
+# two ways:
+#   - existingSecret: name of a pre-created Secret with a `family.local.json` key
+#     (recommended for GitOps — keep it SOPS-encrypted, real data out of values).
+#   - data: inline family.local.json contents (rendered into a Secret by the chart;
+#     fine for local/dev, but ends up in plain Helm values).
+# existingSecret wins when both are set.
 seed:
   enabled: false
+  existingSecret: ""
   data: ""
 
 # ── Health probes ─────────────────────────────────────────────────────────────

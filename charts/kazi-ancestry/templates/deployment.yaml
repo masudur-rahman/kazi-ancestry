@@ -91,7 +91,7 @@ spec:
         {{- if .Values.seed.enabled }}
         - name: seed
           secret:
-            secretName: {{ include "kazi-ancestry.fullname" . }}-seed
+            secretName: {{ include "kazi-ancestry.seedSecretName" . }}
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

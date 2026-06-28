@@ -55,6 +55,15 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- end -}}
 
+{{/* Name of the Secret holding the seed data (existing or rendered). */}}
+{{- define "kazi-ancestry.seedSecretName" -}}
+{{- if .Values.seed.existingSecret -}}
+{{- .Values.seed.existingSecret -}}
+{{- else -}}
+{{- printf "%s-seed" (include "kazi-ancestry.fullname" .) -}}
+{{- end -}}
+{{- end -}}
+
 {{/* OAuth redirect URL: explicit value, else derived from the gateway hostname. */}}
 {{- define "kazi-ancestry.redirectUrl" -}}
 {{- if .Values.oauth.redirectUrl -}}

@@ -68,10 +68,13 @@ no-op once the table has rows, so restarts/rollouts never re-import. The source 
 `SEED_PATH` (`seedPath` in the config file):
 
 - `seed.enabled=false` (default) → seeds the small **in-image sample** (`web/family.json`).
-- `seed.enabled=true` → paste the real `family.local.json` into `seed.data`; the chart
-  renders it into a Secret, mounts it at `/app/seed/family.local.json`, and points
-  `SEED_PATH` there. Real data stays out of the image (in GitOps it lives in the
-  SOPS-encrypted values secret).
+- `seed.enabled=true` → mounts the real `family.local.json` at `/app/seed/family.local.json`
+  and points `SEED_PATH` there. Real data stays out of the image. Supply it via either:
+  - **`seed.existingSecret`** — name of a pre-created Secret with a `family.local.json`
+    key. Recommended for GitOps: keep that Secret SOPS-encrypted so the data never sits
+    in plain Helm values.
+  - **`seed.data`** — inline `family.local.json` contents; the chart renders the Secret
+    for you (fine for local/dev). `existingSecret` wins if both are set.
 
 To **re-seed** after editing names (regenerate ids), run the one-off command in a pod:
 `kubectl -n <ns> exec deploy/<release> -- kazi-ancestry seed --reseed`.
