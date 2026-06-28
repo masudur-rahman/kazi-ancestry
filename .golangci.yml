@@ -40,6 +40,13 @@ linters:
           - errcheck
           - gosec
         path: _test\.go
+      # Session/state cookies set HttpOnly + SameSiteLax; Secure is conditional on
+      # https (off for local http dev), which G124 can't model. Text match keeps
+      # this valid across golangci-lint versions (gosec excludes enum is versioned).
+      - linters:
+          - gosec
+        path: api/web/auth_handlers\.go
+        text: "G124"
     paths:
       - vendor
       - hack
