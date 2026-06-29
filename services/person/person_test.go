@@ -47,4 +47,21 @@ func TestBuildPeople(t *testing.T) {
 	if roots != 1 {
 		t.Errorf("want exactly 1 root, got %d", roots)
 	}
+
+	// Each parent's children must carry contiguous 0-based positions in seed order.
+	byParent := map[string][]int{}
+	for _, p := range people {
+		key := ""
+		if p.ParentID != nil {
+			key = *p.ParentID
+		}
+		byParent[key] = append(byParent[key], p.Position)
+	}
+	for parent, positions := range byParent {
+		for i, pos := range positions {
+			if pos != i {
+				t.Errorf("parent %q child #%d has position %d, want %d", parent, i, pos, i)
+			}
+		}
+	}
 }

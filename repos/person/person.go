@@ -33,7 +33,9 @@ func (r *SQLPersonRepository) WithUnitOfWork(uow styx.UnitOfWork) repos.PersonRe
 func (r *SQLPersonRepository) List() ([]models.Person, error) {
 	ctx := context.Background()
 	var people []models.Person
-	if err := r.db.FindMany(ctx, &people); err != nil {
+	// Order by sibling position so the tree renders in a stable, editable order
+	// (a bare UPDATE otherwise lets Postgres scan the edited row back last).
+	if err := r.db.OrderBy("position").FindMany(ctx, &people); err != nil {
 		return nil, err
 	}
 	return people, nil
@@ -63,6 +65,14 @@ func (r *SQLPersonRepository) Update(id string, person *models.Person) error {
 	r.logger.Infow("update person", "id", id)
 	ctx := context.Background()
 	return r.db.ID(id).UpdateOne(ctx, *person)
+}
+
+// SetPosition updates only the sibling order of a person, leaving every other
+// column untouched (a full UpdateOne would clobber unrelated fields).
+func (r *SQLPersonRepository) SetPosition(id string, pos int) error {
+	ctx := context.Background()
+	_, err := r.db.Exec(ctx, "UPDATE "+models.Person{}.TableName()+" SET position=$1 WHERE id=$2", pos, id)
+	return err
 }
 
 func (r *SQLPersonRepository) Delete(id string) error {

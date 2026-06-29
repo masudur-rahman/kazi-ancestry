@@ -9,6 +9,7 @@ import "encoding/json"
 type Person struct {
 	ID       string  `db:"id,pk" json:"id"`
 	ParentID *string `db:"parent_id" json:"parentId"` // nil = root (stored NULL)
+	Position int     `db:"position" json:"position"`  // order among siblings (0-based)
 	Name     string  `db:"name,req" json:"name"`
 	Origin   string  `db:"origin,req" json:"origin"`
 	Alias    string  `db:"alias,req" json:"alias"`

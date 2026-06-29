@@ -13,6 +13,7 @@ type PersonRepository interface {
 	GetByID(id string) (*models.Person, error)
 	Add(person *models.Person) error
 	Update(id string, person *models.Person) error
+	SetPosition(id string, pos int) error
 	Delete(id string) error
 	Count() (int, error)
 	DeleteAll() error

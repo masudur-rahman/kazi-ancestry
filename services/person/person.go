@@ -29,25 +29,39 @@ func (s *personService) Create(p *models.Person) error {
 	if p.Tags == "" {
 		p.SetTags(nil)
 	}
+	people, err := s.repo.List()
+	if err != nil {
+		return err
+	}
+	taken := make(map[string]bool, len(people))
+	var parentName string
+	siblings := 0
+	for _, e := range people {
+		taken[e.ID] = true
+		if p.ParentID != nil && e.ID == *p.ParentID {
+			parentName = e.Name
+		}
+		if samePtr(e.ParentID, p.ParentID) {
+			siblings++
+		}
+	}
+	p.Position = siblings // append after existing siblings
 	if p.ID == "" {
-		people, err := s.repo.List()
-		if err != nil {
-			return err
-		}
-		taken := make(map[string]bool, len(people))
-		var parentName string
-		for _, e := range people {
-			taken[e.ID] = true
-			if p.ParentID != nil && e.ID == *p.ParentID {
-				parentName = e.Name
-			}
-		}
 		p.ID = slug.Generate(p.Name, parentName, taken)
 	}
 	return s.repo.Add(p)
 }
 func (s *personService) Delete(id string) error { return s.repo.Delete(id) }
 func (s *personService) Count() (int, error)    { return s.repo.Count() }
+
+// samePtr reports whether two optional parent ids refer to the same parent
+// (both root, or both the same id).
+func samePtr(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
 
 // Seed imports the tree if the table is empty. Idempotent.
 func (s *personService) Seed(seedPath string) (int, error) {
@@ -125,18 +139,24 @@ func BuildPeople(seedPath string) ([]models.Person, error) {
 		idFor[r.ID] = slug.Generate(r.Name, parentName, taken)
 	}
 
+	// per-parent sibling counter ("" = root) → 0-based Position in seed order,
+	// giving the tree a stable, editable initial sibling order.
+	pos := map[string]int{}
 	people := make([]models.Person, 0, len(raw))
 	for _, r := range raw {
 		var parent *string
+		key := ""
 		if r.ParentID != nil {
 			pid := idFor[*r.ParentID]
 			parent = &pid
+			key = pid
 		}
 		p := models.Person{
-			ID: idFor[r.ID], ParentID: parent, Name: r.Name,
+			ID: idFor[r.ID], ParentID: parent, Position: pos[key], Name: r.Name,
 			Origin: r.Origin, Alias: r.Alias, Spouse: r.Spouse,
 			Birth: r.Birth, Death: r.Death, Note: r.Note,
 		}
+		pos[key]++
 		p.SetTags(r.Tags)
 		people = append(people, p)
 	}

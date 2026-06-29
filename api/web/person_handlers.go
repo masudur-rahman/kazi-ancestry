@@ -13,6 +13,7 @@ import (
 type personRequest struct {
 	ID       string   `json:"id"`
 	ParentID *string  `json:"parentId"`
+	Position int      `json:"position"`
 	Name     string   `json:"name"`
 	Origin   string   `json:"origin"`
 	Alias    string   `json:"alias"`
@@ -25,7 +26,7 @@ type personRequest struct {
 
 func (pr personRequest) toModel() models.Person {
 	p := models.Person{
-		ID: pr.ID, ParentID: pr.ParentID, Name: pr.Name,
+		ID: pr.ID, ParentID: pr.ParentID, Position: pr.Position, Name: pr.Name,
 		Origin: pr.Origin, Alias: pr.Alias, Spouse: pr.Spouse,
 		Birth: pr.Birth, Death: pr.Death, Note: pr.Note,
 	}
