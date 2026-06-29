@@ -64,7 +64,11 @@ const BN_CONS = {
 const BN_VIRAMA = "্", BN_NUKTA = "়", BN_INHERENT = "o";
 const BN_NUKFOLD = { "য": "Ɏ", "জ": "Ɏ", "ড": "Ɍ", "ঢ": "Ʀ" };
 const BN_SKIP = { "ঁ": 1, "ং": 1, "ঃ": 1, "‌": 1, "‍": 1 };
-const BN_OVERRIDE = { "কাজী": "kazi", "আলী": "ali", "আলি": "ali" };
+const BN_OVERRIDE = {
+  "কাজী": "kazi", "আলী": "ali", "আলি": "ali",
+  "ময়না": "moyna", "নজরুল": "nojrul", "জাহাঙ্গীর": "jahangir",
+  "স্বপন": "swapon", "উজ্জ্বল": "ujjal", "ইউসুফ": "yusuf", "ইয়াসিন": "yasin",
+};
 function bnToken(tok) {
   if (BN_OVERRIDE[tok]) return BN_OVERRIDE[tok];
   const ch = [];
@@ -87,10 +91,28 @@ function bnToken(tok) {
       }
       let last = true;
       for (let j = i + 1; j < ch.length; j++) { if (!BN_SKIP[ch[j]]) { last = false; break; } }
-      if (!last) out += BN_INHERENT;                // bare medial consonant -> inherent vowel
+      // schwa deletion: drop the inherent o when this consonant sits between an
+      // explicit vowel and an "open" next consonant (mirrors pkg/slug/slug.go).
+      if (!last && !(bnPrevVowel(ch, i) && bnNextConsOpen(ch, i))) out += BN_INHERENT;
     }
   }
   return out;
+}
+// nearest sounded rune before i is an explicit vowel (independent vowel or kar)
+function bnPrevVowel(ch, i) {
+  for (let j = i - 1; j >= 0; j--) {
+    if (BN_SKIP[ch[j]]) continue;
+    return !!(BN_KAR[ch[j]] || BN_VOWEL[ch[j]]);
+  }
+  return false;
+}
+// next sounded consonant after i is "open" — immediately followed (past skips) by a kar
+function bnNextConsOpen(ch, i) {
+  let nj = -1;
+  for (let j = i + 1; j < ch.length; j++) { if (!BN_SKIP[ch[j]]) { nj = j; break; } }
+  if (nj < 0) return false;
+  for (let j = nj + 1; j < ch.length; j++) { if (BN_SKIP[ch[j]]) continue; return !!BN_KAR[ch[j]]; }
+  return false;
 }
 function bnRomanize(name) {
   return (name || "").split(/\s+/).map((t) => bnToken(t).toLowerCase()).filter(Boolean).join(" ");

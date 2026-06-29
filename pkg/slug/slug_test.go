@@ -10,6 +10,10 @@ func TestRomanize(t *testing.T) {
 		"হাসান":          "hasan",
 		"তানিয়া":        "taniya", // য়-glide
 		"তৈয়ব আলী কাজী": "toiyob",
+		"ফুলমালা":        "fulmala", // schwa deleted: vowel + open next-consonant
+		"ইমরান":          "imran",   // schwa deleted after independent vowel
+		"সজল":            "sojol",   // schwa kept before a word-final consonant
+		"নুসরাত":         "nusrat",  // schwa deleted (nus-rat, not nus-o-rat)
 	}
 	for name, want := range cases {
 		taken := map[string]bool{}

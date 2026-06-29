@@ -52,8 +52,54 @@ func skip(r rune) bool {
 	return false
 }
 
-// token-level overrides for names that have a conventional romanization
-var override = map[string]string{"কাজী": "kazi", "আলী": "ali", "আলি": "ali"}
+// prevSoundedIsVowel reports whether the nearest sounded rune before index i is
+// an explicit vowel (independent vowel or kar).
+func prevSoundedIsVowel(ch []rune, i int) bool {
+	for j := i - 1; j >= 0; j-- {
+		if skip(ch[j]) {
+			continue
+		}
+		if _, ok := kar[ch[j]]; ok {
+			return true
+		}
+		_, ok := vowel[ch[j]]
+		return ok
+	}
+	return false
+}
+
+// nextConsonantOpen reports whether the next sounded consonant after index i is
+// "open" — immediately followed (past skips) by a dependent vowel sign (kar).
+func nextConsonantOpen(ch []rune, i int) bool {
+	nj := -1
+	for j := i + 1; j < len(ch); j++ {
+		if !skip(ch[j]) {
+			nj = j
+			break
+		}
+	}
+	if nj < 0 {
+		return false
+	}
+	for j := nj + 1; j < len(ch); j++ {
+		if skip(ch[j]) {
+			continue
+		}
+		_, ok := kar[ch[j]]
+		return ok
+	}
+	return false
+}
+
+// token-level overrides for names whose conventional romanization differs from
+// the phonetic map (glides, conjunct clusters, etc.). Applies to any present or
+// future person with the same name token.
+var override = map[string]string{
+	"কাজী": "kazi", "আলী": "ali", "আলি": "ali",
+	"ময়না": "moyna", "নজরুল": "nojrul", "জাহাঙ্গীর": "jahangir",
+	"স্বপন": "swapon", "উজ্জ্বল": "ujjal",
+	"ইউসুফ": "yusuf", "ইয়াসিন": "yasin",
+}
 
 // romanizeToken transliterates a single whitespace-delimited token.
 func romanizeToken(tok string) string {
@@ -99,7 +145,11 @@ func romanizeToken(tok string) string {
 					continue
 				}
 			}
-			// bare consonant: inherent vowel unless it's the last sounded rune
+			// bare consonant: inherent vowel, unless it's the last sounded rune, or
+			// schwa deletion applies — the consonant sits between an explicit vowel
+			// and an "open" next consonant (one followed by a kar). Schwa deletion
+			// drops the o in e.g. ফুলমালা→fulmala, ইমরান→imran, while word-initial
+			// and pre-final consonants keep it (সাজল→sajol, কমল→komol).
 			last := true
 			for j := i + 1; j < len(ch); j++ {
 				if !skip(ch[j]) {
@@ -107,7 +157,7 @@ func romanizeToken(tok string) string {
 					break
 				}
 			}
-			if !last {
+			if !last && (!prevSoundedIsVowel(ch, i) || !nextConsonantOpen(ch, i)) {
 				b.WriteString(inherent)
 			}
 		}
