@@ -122,9 +122,12 @@ const devLoginPage = `<!doctype html>
 <html lang="bn"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ডেভ লগ ইন · Kazi Ancestry</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Noto+Serif+Bengali:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
-    background:#f4ecd6;color:#3b2f21;font-family:'Noto Serif Bengali',Georgia,serif}
+    background:#f4ecd6;color:#3b2f21;font-family:'Spectral','Noto Serif Bengali',Georgia,serif}
   form{background:#fbf6ea;border:1px solid #d4c096;border-radius:14px;padding:28px 26px;
     width:320px;box-shadow:0 16px 40px rgba(70,48,18,.18)}
   h1{margin:0 0 4px;font-size:20px;color:#9c4326}
@@ -147,12 +150,11 @@ const devLoginPage = `<!doctype html>
   <input id="email" name="email" type="email" value="dev@local" autocomplete="off">
   <label for="role">ভূমিকা</label>
   <select id="role" name="role">
-    <option value="admin">পরিচালক (admin)</option>
+    <option value="admin">কর্তৃপক্ষ (admin)</option>
     <option value="contributor">সদস্য (contributor)</option>
   </select>
-  <div class="note">দর্শক হতে লগ ইন লাগে না — লগ আউট করুন।</div>
   <button type="submit">লগ ইন</button>
-  <div class="note">শুধু ডেভেলপমেন্টে · উৎপাদনে নিষ্ক্রিয়</div>
+  <div class="note">শুধু ডেভেলপমেন্টের জন্য</div>
 </form>
 </body></html>`
 
