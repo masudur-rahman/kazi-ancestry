@@ -27,10 +27,11 @@ func setSessionCookie(w http.ResponseWriter, value string, maxAge int) {
 	})
 }
 
-// HandleLogin starts the Google OAuth flow.
+// HandleLogin starts the Google OAuth flow. When OAuth is not configured (dev),
+// it serves the mock login form instead so local logout/role testing works.
 func HandleLogin(w http.ResponseWriter, r *http.Request) {
 	if !configs.KaziConfig.Auth.Enabled() {
-		http.Redirect(w, r, "/", http.StatusFound)
+		serveDevLogin(w)
 		return
 	}
 	b := make([]byte, 24)
@@ -81,4 +82,82 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
 func HandleLogout(w http.ResponseWriter, r *http.Request) {
 	setSessionCookie(w, "", -1)
 	WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// HandleDevLogin mints a session from the mock login form. It is a dev-only
+// convenience: when real OAuth is configured it refuses and redirects home, so
+// it is inert in production. The role is taken straight from the form so any
+// role can be exercised locally.
+func HandleDevLogin(w http.ResponseWriter, r *http.Request) {
+	if configs.KaziConfig.Auth.Enabled() {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<10) // bound the form body (dev login)
+	_ = r.ParseForm()
+	email := strings.TrimSpace(r.FormValue("email"))
+	if email == "" {
+		email = "dev@local"
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		name = "Dev"
+	}
+	role := r.FormValue("role")
+	switch role {
+	case "admin", "contributor", "viewer": // valid
+	default:
+		role = "admin"
+	}
+	sess := auth.NewSession(email, name, role)
+	setSessionCookie(w, auth.Sign(sess, configs.KaziConfig.Auth.SessionSecret), auth.MaxAgeSeconds())
+	metrics.LoginResult("success")
+	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+// devLoginPage is the self-contained mock login form (dev only). It posts
+// form-encoded fields (name, email, role) to /auth/dev-login. No user input is
+// interpolated, so a static string is safe.
+const devLoginPage = `<!doctype html>
+<html lang="bn"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ডেভ লগ ইন · Kazi Ancestry</title>
+<style>
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background:#f4ecd6;color:#3b2f21;font-family:'Noto Serif Bengali',Georgia,serif}
+  form{background:#fbf6ea;border:1px solid #d4c096;border-radius:14px;padding:28px 26px;
+    width:320px;box-shadow:0 16px 40px rgba(70,48,18,.18)}
+  h1{margin:0 0 4px;font-size:20px;color:#9c4326}
+  p{margin:0 0 18px;font-size:12.5px;color:#8a7146}
+  label{display:block;font-size:12.5px;margin:12px 0 5px;color:#5c4a2c}
+  input,select{width:100%;box-sizing:border-box;padding:9px 11px;font-size:14px;
+    border:1px solid #cdb988;border-radius:8px;background:#fdf9ee;color:#3b2f21;font-family:inherit}
+  button{margin-top:20px;width:100%;padding:11px;font-size:14.5px;font-weight:600;
+    border:1px solid #9c4326;border-radius:8px;background:#9c4326;color:#fbf5e7;cursor:pointer}
+  button:hover{background:#85371f}
+  .note{margin-top:14px;font-size:11px;color:#a8854a;text-align:center}
+</style></head>
+<body>
+<form method="post" action="/auth/dev-login">
+  <h1>ডেভ লগ ইন</h1>
+  <p>স্থানীয় পরীক্ষার জন্য মক লগ ইন (OAuth নেই)।</p>
+  <label for="name">নাম</label>
+  <input id="name" name="name" value="Dev" autocomplete="off">
+  <label for="email">ইমেইল</label>
+  <input id="email" name="email" type="email" value="dev@local" autocomplete="off">
+  <label for="role">ভূমিকা</label>
+  <select id="role" name="role">
+    <option value="admin">পরিচালক (admin)</option>
+    <option value="contributor">সদস্য (contributor)</option>
+    <option value="viewer">দর্শক (viewer)</option>
+  </select>
+  <button type="submit">লগ ইন</button>
+  <div class="note">শুধু ডেভেলপমেন্টে · উৎপাদনে নিষ্ক্রিয়</div>
+</form>
+</body></html>`
+
+func serveDevLogin(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(devLoginPage))
 }

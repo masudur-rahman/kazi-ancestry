@@ -32,6 +32,7 @@ func NewRouter(webDir string) chi.Router {
 	r.Get("/auth/login", HandleLogin)
 	r.Get("/auth/callback", HandleCallback)
 	r.Post("/auth/logout", HandleLogout)
+	r.Post("/auth/dev-login", HandleDevLogin) // dev-only mock login; inert when OAuth is configured
 
 	r.Route("/api/v1", func(r chi.Router) {
 		// Only allowlisted contributors (and admins) may suggest and view their

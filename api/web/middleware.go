@@ -29,16 +29,16 @@ func withUser(ctx context.Context, u *models.User) context.Context {
 	return context.WithValue(ctx, userCtxKey, u)
 }
 
-// SessionMiddleware resolves the request's user from the session cookie and
-// stores it on the context. When OAuth is not configured (dev mode), every
-// request is treated as an admin so the app is usable without credentials.
+// SessionMiddleware resolves the request's user from the signed session cookie
+// and stores it on the context; an absent or invalid cookie means anonymous.
+// In dev (no OAuth configured) the cookie is minted by the mock login at
+// /auth/login (HandleDevLogin), signed with the same SessionSecret, so login and
+// logout behave exactly as in production.
 func SessionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var user *models.User
 		cfg := configs.KaziConfig.Auth
-		if !cfg.Enabled() {
-			user = &models.User{ID: "dev", Email: "dev@local", Name: "Dev", Role: "admin"}
-		} else if c, err := r.Cookie(auth.SessionCookie); err == nil {
+		if c, err := r.Cookie(auth.SessionCookie); err == nil {
 			if s, err := auth.Verify(c.Value, cfg.SessionSecret); err == nil {
 				user = &models.User{ID: s.Email, Email: s.Email, Name: s.Name, Role: s.Role}
 			}
