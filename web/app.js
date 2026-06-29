@@ -396,7 +396,7 @@ const App = {
     this._api("POST", "/suggestions/" + encodeURIComponent(sid) + "/" + verb).catch((e) => this._apiErr(e));
   },
   approve(s) { if (s.type === "edit" && this.byId[s.targetId]) this.applyEdit(s.targetId, s.changes); else if (s.type === "add" && this.byId[s.parentId]) this.addPerson(s.parentId, s.fields); this.setStatus(s.id, "approved"); this.toast("অনুমোদন করা হয়েছে"); },
-  reject(s) { this.setStatus(s.id, "rejected"); this.toast("বাতিল করা হয়েছে"); },
+  reject(s) { this.setStatus(s.id, "rejected"); this.toast("প্রত্যাখ্যান করা হয়েছে"); },
   toggleInbox() {
     const opening = !this.state.showInbox;
     this.setState({ showInbox: opening, showMine: false });
@@ -762,10 +762,11 @@ const App = {
       return h("div", { style: { display: "flex", "align-items": "center", gap: "10px", "flex-wrap": "wrap" } }, b);
     }
     const role = this.role(), isAdmin = role === "admin";
-    const badge = { admin: ["পরিচালক", "#9c4326"], contributor: ["সদস্য", "#5c6b4a"], viewer: ["দর্শক", "#8a6d4a"] }[role] || ["দর্শক", "#8a6d4a"];
+    // Contributors get no role chip — only কর্তৃপক্ষ (admin) and দর্শক (viewer) are badged.
+    const badge = { admin: ["কর্তৃপক্ষ", "#9c4326"], viewer: ["দর্শক", "#8a6d4a"] }[role];
     const chip = h("div", { style: { display: "flex", "align-items": "center", gap: "7px", padding: "5px 11px", border: "1px solid #d4c096", "border-radius": "8px", background: "#fbf6ea" } },
       h("span", { style: { "font-size": "13.5px", "font-weight": "600", color: "#3b2f21" } }, user.name),
-      h("span", { style: { "font-size": "10.5px", "letter-spacing": ".5px", color: "#fbf5e7", background: badge[1], "border-radius": "10px", padding: "2px 7px" } }, badge[0]));
+      badge ? h("span", { style: { "font-size": "10.5px", "letter-spacing": ".5px", color: "#fbf5e7", background: badge[1], "border-radius": "10px", padding: "2px 7px" } }, badge[0]) : null);
     const out = h("button", { onClick: () => this.signOut(), style: { padding: "8px 12px", "font-size": "13px", border: "1px solid #cdb988", "border-radius": "8px", background: "#fbf6ea", color: "#5c4a2c", cursor: "pointer" } }, "লগ আউট");
     hover(out, "background:#f1e6cb");
     let review = null;
@@ -829,9 +830,9 @@ const App = {
     let actions = null;
     if (canAct) {
       actions = h("div", { style: { "margin-top": "24px", "padding-top": "18px", "border-top": "1px solid #e6d8b8" } },
-        h("div", { style: { "font-size": "12px", "letter-spacing": ".4px", color: "#a8854a", "margin-bottom": "11px" } }, admin ? "তথ্য পরিবর্তন" : "পরিবর্তনের প্রস্তাব"),
+        h("div", { style: { "font-size": "12px", "letter-spacing": ".4px", color: "#a8854a", "margin-bottom": "11px" } }, admin ? "তথ্য সংশোধন" : "সংশোধনের প্রস্তাব"),
         h("div", { style: { display: "flex", "flex-wrap": "wrap", gap: "8px" } },
-          actBtn(admin ? "ঠিক করুন" : "ঠিক করার প্রস্তাব", () => this.onEdit(), "primary"),
+          actBtn(admin ? "সংশোধন" : "সংশোধনের প্রস্তাব", () => this.onEdit(), "primary"),
           actBtn(admin ? "সন্তান যোগ" : "সন্তানের প্রস্তাব", () => this.onAddChild(), "plain"),
           s.parentId != null ? actBtn(admin ? "ভাইবোন যোগ" : "ভাইবোনের প্রস্তাব", () => this.onAddSibling(), "plain") : null,
           admin && kidIds.length === 0 ? actBtn("মুছুন", () => this.onDelete(), "danger") : null));
@@ -860,7 +861,7 @@ const App = {
 
   // _statusBadge renders a colored pill for a resolved/pending suggestion.
   _statusBadge(status) {
-    const m = { approved: ["অনুমোদিত", "#5c6b4a", "#eef0e6"], rejected: ["বাতিল", "#a8442a", "#f6e7e1"], pending: ["অপেক্ষমাণ", "#a8854a", "#f3ebd6"] }[status] || ["—", "#9c8456", "#f1e6cb"];
+    const m = { approved: ["অনুমোদিত", "#5c6b4a", "#eef0e6"], rejected: ["প্রত্যাখ্যাত", "#a8442a", "#f6e7e1"], pending: ["অপেক্ষমাণ", "#a8854a", "#f3ebd6"] }[status] || ["—", "#9c8456", "#f1e6cb"];
     return h("span", { style: { display: "inline-block", "font-size": "11.5px", "font-weight": "600", color: m[1], background: m[2], border: "1px solid " + m[1] + "55", "border-radius": "20px", padding: "3px 11px" } }, m[0]);
   },
 
@@ -870,12 +871,12 @@ const App = {
     opts = opts || {};
     const accent = this.state.accent;
     let rows = [], title = "", typeLabel = "";
-    if (x.type === "edit") { typeLabel = "পরিবর্তন"; title = x.targetName; rows = Object.keys(x.changes || {}).map((k) => ({ field: this.fieldLabel(k), old: this.fmtVal(k, x.before ? x.before[k] : ""), nw: this.fmtVal(k, x.changes[k]) })); }
+    if (x.type === "edit") { typeLabel = "সংশোধন"; title = x.targetName; rows = Object.keys(x.changes || {}).map((k) => ({ field: this.fieldLabel(k), old: this.fmtVal(k, x.before ? x.before[k] : ""), nw: this.fmtVal(k, x.changes[k]) })); }
     else { typeLabel = "নতুন ব্যক্তি"; title = x.fields.name + "  ·  " + x.parentName + "-এর অধীনে"; rows = ["origin", "alias", "spouse", "birth", "death", "note"].filter((k) => x.fields[k]).map((k) => ({ field: this.fieldLabel(k), old: "—", nw: this.fmtVal(k, x.fields[k]) })); if (rows.length === 0) rows = [{ field: "নাম", old: "—", nw: x.fields.name }]; }
     let footer;
     if (opts.actions) {
       const approve = h("button", { onClick: () => this.approve(x), style: { flex: "1", padding: "8px 0", "font-size": "13.5px", border: "none", "border-radius": "8px", background: "#5c6b4a", color: "#fbf5e7", cursor: "pointer", "font-weight": "500" } }, "অনুমোদন"); hover(approve, "background:#4d5a3e");
-      const reject = h("button", { onClick: () => this.reject(x), style: { flex: "1", padding: "8px 0", "font-size": "13.5px", border: "1px solid #cdb988", "border-radius": "8px", background: "#fdf9ee", color: "#8a6a52", cursor: "pointer" } }, "বাতিল"); hover(reject, "background:#f1e6cb");
+      const reject = h("button", { onClick: () => this.reject(x), style: { flex: "1", padding: "8px 0", "font-size": "13.5px", border: "1px solid #cdb988", "border-radius": "8px", background: "#fdf9ee", color: "#8a6a52", cursor: "pointer" } }, "প্রত্যাখ্যান"); hover(reject, "background:#f1e6cb");
       footer = h("div", { style: { display: "flex", gap: "8px", "margin-top": "14px" } }, approve, reject);
     } else {
       footer = h("div", { style: { "margin-top": "13px" } }, this._statusBadge(x.status));
@@ -930,7 +931,7 @@ const App = {
     const m = this.state.modal; if (!m) return null;
     const accent = this.state.accent, f = this.state.form, isSuggest = !!m.asSuggestion;
     let title = "", subtitle = "", cta = "";
-    if (m.kind === "edit") { const nm = this.byId[m.target] ? this.byId[m.target].name : ""; title = isSuggest ? "ঠিক করার প্রস্তাব" : "তথ্য ঠিক করুন"; subtitle = isSuggest ? nm + "-এর পরিবর্তনের প্রস্তাব" : "ঠিক করছেন: " + nm; cta = isSuggest ? "প্রস্তাব পাঠান" : "সংরক্ষণ করুন"; }
+    if (m.kind === "edit") { const nm = this.byId[m.target] ? this.byId[m.target].name : ""; title = isSuggest ? "সংশোধনের প্রস্তাব" : "তথ্য সংশোধন"; subtitle = isSuggest ? nm + "-এর সংশোধনের প্রস্তাব" : "সংশোধন করছেন: " + nm; cta = isSuggest ? "প্রস্তাব পাঠান" : "সংরক্ষণ করুন"; }
     else { title = isSuggest ? "নতুন ব্যক্তির প্রস্তাব" : "নতুন ব্যক্তি যোগ"; subtitle = (this.byId[m.parentId] ? this.byId[m.parentId].name : "") + "-এর সন্তান"; cta = isSuggest ? "প্রস্তাব পাঠান" : "যোগ করুন"; }
     const label = (t) => h("label", { style: { "font-size": "12px", "letter-spacing": ".4px", color: "#9c8456", "margin-bottom": "5px", display: "block" } }, t);
     const inp = (key, ph, fs) => h("input", { value: f[key] || "", placeholder: ph || "", onInput: (e) => this.setForm(key, e.target.value), style: { width: "100%", padding: "9px 11px", "font-size": fs || "14px", border: "1px solid #cdb988", "border-radius": "8px", background: "#fdf9ee", color: "#3b2f21", outline: "none", "margin-bottom": "14px" } });
@@ -947,7 +948,7 @@ const App = {
       label("মন্তব্য"),
       h("textarea", { rows: "3", onInput: (e) => this.setForm("note", e.target.value), style: { width: "100%", padding: "9px 11px", "font-size": "14px", border: "1px solid #cdb988", "border-radius": "8px", background: "#fdf9ee", color: "#3b2f21", outline: "none", resize: "vertical", "margin-bottom": "12px" } }, f.note || ""),
       h("label", { style: { display: "flex", "align-items": "center", gap: "9px", "font-size": "14px", color: "#5c4a2c", cursor: "pointer", "margin-bottom": "6px" } }, h("input", { type: "checkbox", checked: this.hasTag(f, "died_young"), onChange: (e) => this._setFormTag("died_young", e.target.checked), style: { width: "16px", height: "16px", "accent-color": "#9c4326" } }), "অল্প বয়সে মৃত্যু (✻)"),
-      isSuggest ? h("div", { style: { "margin-top": "10px", background: "#f1e7cc", border: "1px solid #e2d2a8", "border-radius": "8px", padding: "10px 12px", "font-size": "12.5px", color: "#8a6d3f", "line-height": "1.5" } }, "এটি প্রস্তাব হিসেবে পাঠানো হবে — পরিচালক অনুমোদন করলে তবেই গাছে যুক্ত হবে।") : null,
+      isSuggest ? h("div", { style: { "margin-top": "10px", background: "#f1e7cc", border: "1px solid #e2d2a8", "border-radius": "8px", padding: "10px 12px", "font-size": "12.5px", color: "#8a6d3f", "line-height": "1.5" } }, "এটি প্রস্তাব হিসেবে পাঠানো হবে — কর্তৃপক্ষ অনুমোদন করলে তবেই গাছে যুক্ত হবে।") : null,
       h("div", { style: { display: "flex", "justify-content": "flex-end", gap: "10px", "margin-top": "22px" } }, cancel, save));
     return h("div", { onMouseDown: () => this.onModalCancel(), style: { position: "absolute", inset: "0", background: "rgba(58,40,20,.34)", "backdrop-filter": "blur(2px)", "z-index": "60", display: "flex", "align-items": "center", "justify-content": "center", padding: "24px" } }, dialog);
   },
