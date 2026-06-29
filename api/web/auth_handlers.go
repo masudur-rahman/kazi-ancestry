@@ -103,10 +103,10 @@ func HandleDevLogin(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = "Dev"
 	}
+	// Viewer is the logged-out default, so the mock form only offers admin /
+	// contributor; anything else falls back to admin.
 	role := r.FormValue("role")
-	switch role {
-	case "admin", "contributor", "viewer": // valid
-	default:
+	if role != "contributor" {
 		role = "admin"
 	}
 	sess := auth.NewSession(email, name, role)
@@ -149,8 +149,8 @@ const devLoginPage = `<!doctype html>
   <select id="role" name="role">
     <option value="admin">পরিচালক (admin)</option>
     <option value="contributor">সদস্য (contributor)</option>
-    <option value="viewer">দর্শক (viewer)</option>
   </select>
+  <div class="note">দর্শক হতে লগ ইন লাগে না — লগ আউট করুন।</div>
   <button type="submit">লগ ইন</button>
   <div class="note">শুধু ডেভেলপমেন্টে · উৎপাদনে নিষ্ক্রিয়</div>
 </form>

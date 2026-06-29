@@ -17,14 +17,15 @@ server:
   webDir: web
 
 auth:
-  # Leave googleClientId/googleClientSecret empty for OPEN DEV MODE (no login
-  # wall; every request is admin). Fill them to enable Google OAuth login.
+  # Leave googleClientId/googleClientSecret empty for DEV MODE: /auth/login serves
+  # a mock login form (pick admin or contributor). Fill them to enable Google OAuth.
   googleClientId: ""
   googleClientSecret: ""
   redirectUrl: http://localhost:5294/auth/callback
   sessionSecret: ""          # openssl rand -base64 32
   admins: []                 # emails that can edit + review
   allowlist: []              # emails that can suggest (others are read-only viewers)
+  openSuggestions: true      # any logged-in user may suggest (not just allowlist)
 
 privacy:
   guestNamesOnly: false      # true -> logged-out guests see only names (tree shape)
