@@ -30,9 +30,10 @@ const bootstrapMarker = "<!--KAZI_BOOTSTRAP-->"
 // injected here (only for authorized requests) rather than served from a public
 // JSON endpoint, so there is no scrapable data API.
 type bootstrap struct {
-	People      []models.Person     `json:"people"`
-	User        *models.User        `json:"user"`
-	Suggestions []models.Suggestion `json:"suggestions"`
+	People          []models.Person     `json:"people"`
+	User            *models.User        `json:"user"`
+	Suggestions     []models.Suggestion `json:"suggestions"`
+	OpenSuggestions bool                `json:"openSuggestions"`
 }
 
 // page serves index.html with server-rendered initial state and the static
@@ -91,7 +92,7 @@ func (p *page) handleIndex(w http.ResponseWriter, r *http.Request) {
 		suggestions, _ = all.GetServices().Suggestion.List()
 	}
 
-	data := bootstrap{People: people, User: user, Suggestions: suggestions}
+	data := bootstrap{People: people, User: user, Suggestions: suggestions, OpenSuggestions: configs.KaziConfig.Auth.OpenSuggestions}
 	blob, _ := json.Marshal(data)
 	script := []byte(`<script id="kazi-bootstrap" type="application/json">` + string(blob) + `</script>`)
 

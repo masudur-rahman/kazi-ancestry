@@ -172,6 +172,7 @@ const App = {
       tx: 80, ty: 60, scale: 0.78,
       layout: "tree", variant: "card", accent: this.ACCENTS[0],
       user: boot.user || null,
+      openSuggestions: !!boot.openSuggestions,
       suggestions: (boot.suggestions || []).map((row) => this._sugFromRow(row)),
       modal: null, signin: null, form: this.blankForm(),
       showInbox: false, inboxTab: "pending", showMine: false, mine: null,
@@ -246,7 +247,9 @@ const App = {
   role() { return this.state.user ? this.state.user.role : "viewer"; },
   isAdmin() { return this.role() === "admin"; },
   isContrib() { return this.role() === "contributor"; },
-  canAct() { return this.isAdmin() || this.isContrib(); },
+  // Any logged-in user may suggest when openSuggestions is on (server-gated too).
+  canSuggest() { return !!this.state.user && (this.isContrib() || this.state.openSuggestions); },
+  canAct() { return this.isAdmin() || this.canSuggest(); },
 
   // ---- mutations ----
   // commit re-derives indices and re-renders. The server persists each change via
@@ -315,13 +318,16 @@ const App = {
   // re-renders the login wall (no tree data for anonymous).
   login() { window.location.href = "/auth/login"; },
   signOut() {
-    this._api("POST", "/auth/logout").catch(() => {}).then(() => { auth.clear(); window.location.reload(); });
+    // /auth/logout is a top-level route, not under /api/v1 — call it directly
+    // (not via _api, which prefixes /api/v1) so the server actually clears the session.
+    fetch("/auth/logout", { method: "POST", credentials: "same-origin" })
+      .catch(() => {}).then(() => { auth.clear(); window.location.reload(); });
   },
 
   // ---- modal ----
-  onEdit() { if (!this.canAct()) return; const p = this.byId[this.state.selectedId]; if (!p) return; this.setState({ modal: { kind: "edit", target: p.id, asSuggestion: this.isContrib() }, form: this.formFrom(p) }); },
-  onAddChild() { if (!this.canAct()) return; const id = this.state.selectedId; this.setState({ modal: { kind: "add", parentId: id, asSuggestion: this.isContrib() }, form: this.blankForm() }); },
-  onAddSibling() { if (!this.canAct()) return; const p = this.byId[this.state.selectedId]; if (!p || p.parentId == null) return; this.setState({ modal: { kind: "add", parentId: p.parentId, asSuggestion: this.isContrib() }, form: this.blankForm() }); },
+  onEdit() { if (!this.canAct()) return; const p = this.byId[this.state.selectedId]; if (!p) return; this.setState({ modal: { kind: "edit", target: p.id, asSuggestion: !this.isAdmin() }, form: this.formFrom(p) }); },
+  onAddChild() { if (!this.canAct()) return; const id = this.state.selectedId; this.setState({ modal: { kind: "add", parentId: id, asSuggestion: !this.isAdmin() }, form: this.blankForm() }); },
+  onAddSibling() { if (!this.canAct()) return; const p = this.byId[this.state.selectedId]; if (!p || p.parentId == null) return; this.setState({ modal: { kind: "add", parentId: p.parentId, asSuggestion: !this.isAdmin() }, form: this.blankForm() }); },
   onModalCancel() { this.setState({ modal: null }); },
 
   onModalSave() {
@@ -383,7 +389,7 @@ const App = {
   toggleMine() {
     const opening = !this.state.showMine;
     this.setState({ showMine: opening, showInbox: false });
-    if (opening && this.isContrib()) {
+    if (opening && this.canSuggest()) {
       this.setState({ mine: null });
       this._api("GET", "/suggestions/mine")
         .then((rows) => { this.setState({ mine: Array.isArray(rows) ? rows.map((r) => this._sugFromRow(r)) : [] }); })
@@ -715,7 +721,7 @@ const App = {
     return h("div", { ref: (el) => (this.topbarEl = el), style: Object.assign({}, barStyle, { gap: "18px", padding: "12px 20px", "flex-wrap": "wrap" }) },
       this.logo(false),
       h("div", { style: { display: "flex", "align-items": "center", gap: "11px", "flex-wrap": "wrap", "justify-content": "flex-end" } },
-        this.ctlSearch(false), this.ctlLayout(), this.ctlExpand(),
+        this.ctlSearch(false), this.ctlLayout(),
         h("div", { style: { width: "1px", height: "26px", background: "#d4c096" } }),
         this.account()));
   },
@@ -733,7 +739,7 @@ const App = {
       const b = h("button", { onClick: () => this.login(), style: { padding: "8px 14px", "font-size": "13.5px", border: "1px solid #9c4326", "border-radius": "8px", background: accent, color: "#fbf5e7", cursor: "pointer", "font-weight": "500" } }, "লগ ইন");
       return h("div", { style: { display: "flex", "align-items": "center", gap: "10px", "flex-wrap": "wrap" } }, b);
     }
-    const role = this.role(), isAdmin = role === "admin", isContrib = role === "contributor";
+    const role = this.role(), isAdmin = role === "admin";
     const badge = { admin: ["পরিচালক", "#9c4326"], contributor: ["সদস্য", "#5c6b4a"], viewer: ["দর্শক", "#8a6d4a"] }[role] || ["দর্শক", "#8a6d4a"];
     const chip = h("div", { style: { display: "flex", "align-items": "center", gap: "7px", padding: "5px 11px", border: "1px solid #d4c096", "border-radius": "8px", background: "#fbf6ea" } },
       h("span", { style: { "font-size": "13.5px", "font-weight": "600", color: "#3b2f21" } }, user.name),
@@ -747,7 +753,7 @@ const App = {
         "যাচাই", pending.length ? h("span", { style: { background: "#fbf5e7", color: "#9c4326", "font-size": "11.5px", "font-weight": "700", "border-radius": "9px", padding: "1px 7px", "margin-left": "2px" } }, pending.length) : null);
     }
     let mine = null;
-    if (isContrib) {
+    if (this.canSuggest() && !isAdmin) {
       mine = h("button", { onClick: () => this.toggleMine(), style: { padding: "8px 13px", "font-size": "13.5px", border: "1px solid #cdb988", "border-radius": "8px", background: "#fbf6ea", color: "#5c4a2c", cursor: "pointer", "font-weight": "500" } }, "আমার প্রস্তাব");
       hover(mine, "background:#f1e6cb");
     }
@@ -768,12 +774,17 @@ const App = {
         h("div", { style: { position: "absolute", left: "50%", bottom: "16px", transform: "translateX(-50%)", "pointer-events": "auto", "border-radius": "9px", "box-shadow": "0 6px 18px rgba(70,48,18,.22)" } }, this.ctlLayout()),
         exp ? h("div", { style: { position: "absolute", right: "14px", bottom: "16px", "pointer-events": "auto" } }, exp) : null);
     }
-    return h("div", { style: { position: "absolute", left: "18px", bottom: "18px", display: "flex", "align-items": "flex-end", gap: "13px", "z-index": "20", "flex-wrap": "wrap" } },
-      zoom,
-      h("div", { style: { background: "rgba(251,246,234,.85)", border: "1px solid #ddcba0", "border-radius": "10px", padding: "9px 13px", "font-size": "11.5px", color: "#7d6740", "line-height": "1.7", "backdrop-filter": "blur(4px)" } },
-        h("div", null, h("em", { style: { color: "#9c4326" } }, "বাঁকা লেখা"), " — এলাকা"),
-        canvas ? h("div", null, h("b", null, "+n"), " — n সন্তান দেখুন") : null,
-        h("div", { style: { "margin-top": "6px", "padding-top": "6px", "border-top": "1px solid #e6d8b8" } }, this.ctlSwatches())));
+    const showExp = this.state.layout !== "explorer";
+    const exp = showExp ? h("div", { style: { display: "flex", "flex-direction": "column", gap: "6px" } },
+      zbtn(this._arrows("out"), () => this.expandAll(), "", "সব খুলুন"), zbtn(this._arrows("in"), () => this.collapseAll(), "", "সব বন্ধ")) : null;
+    return h("div", { style: { position: "absolute", inset: "0", "pointer-events": "none", "z-index": "20" } },
+      h("div", { style: { position: "absolute", left: "18px", bottom: "18px", display: "flex", "align-items": "flex-end", gap: "13px", "pointer-events": "auto", "flex-wrap": "wrap" } },
+        zoom,
+        h("div", { style: { background: "rgba(251,246,234,.85)", border: "1px solid #ddcba0", "border-radius": "10px", padding: "9px 13px", "font-size": "11.5px", color: "#7d6740", "line-height": "1.7", "backdrop-filter": "blur(4px)" } },
+          h("div", null, h("em", { style: { color: "#9c4326" } }, "বাঁকা লেখা"), " — এলাকা"),
+          canvas ? h("div", null, h("b", null, "+n"), " — n সন্তান দেখুন") : null,
+          h("div", { style: { "margin-top": "6px", "padding-top": "6px", "border-top": "1px solid #e6d8b8" } }, this.ctlSwatches()))),
+      exp ? h("div", { style: { position: "absolute", right: "18px", bottom: "18px", "pointer-events": "auto" } }, exp) : null);
   },
 
   panel() {
@@ -883,7 +894,7 @@ const App = {
 
   // mySuggestions: a contributor's own submissions with their statuses (read-only).
   mySuggestions() {
-    if (!(this.state.showMine && this.isContrib())) return null;
+    if (!(this.state.showMine && this.canSuggest())) return null;
     const list = (this.state.mine || []).slice().sort((a, b) => (b.at || 0) - (a.at || 0));
     const body = this.state.mine == null
       ? h("div", { style: { "text-align": "center", padding: "50px 20px", color: "#a89468" } }, "লোড হচ্ছে…")

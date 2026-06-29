@@ -56,10 +56,20 @@ type AuthConfig struct {
 	SessionSecret      string   `json:"sessionSecret" yaml:"sessionSecret"`
 	Allowlist          []string `json:"allowlist" yaml:"allowlist"` // emails allowed as contributors
 	Admins             []string `json:"admins" yaml:"admins"`       // emails granted admin
+	// OpenSuggestions lets any authenticated user submit suggestions (not just
+	// allowlisted contributors). Direct edits remain admin-only regardless.
+	OpenSuggestions bool `json:"openSuggestions" yaml:"openSuggestions"`
 }
 
 // Enabled reports whether OAuth is configured.
 func (a AuthConfig) Enabled() bool { return a.GoogleClientID != "" && a.GoogleClientSecret != "" }
+
+// CanSuggest reports whether a user with the given role may submit suggestions.
+// Admins and contributors always may; other authenticated users may when
+// OpenSuggestions is on.
+func (a AuthConfig) CanSuggest(role string) bool {
+	return role == "admin" || role == "contributor" || a.OpenSuggestions
+}
 
 // RoleFor returns the role for an email: "admin", "contributor", or "viewer".
 // Admins (and allowlisted contributors) are matched case-insensitively; everyone
@@ -108,7 +118,7 @@ func defaults() Configuration {
 			User: "postgres", Password: "postgres", SSLMode: "disable",
 		}},
 		Server:   ServerConfig{Host: "0.0.0.0", Port: 5294, WebDir: "web", MetricsPort: 9090},
-		Auth:     AuthConfig{RedirectURL: "http://localhost:5294/auth/callback", SessionSecret: "dev-insecure-secret-change-me"}, //nolint:gosec // G101: dev fallback, overridden by SESSION_SECRET in any real deployment.
+		Auth:     AuthConfig{RedirectURL: "http://localhost:5294/auth/callback", SessionSecret: "dev-insecure-secret-change-me", OpenSuggestions: true}, //nolint:gosec // G101: dev fallback, overridden by SESSION_SECRET in any real deployment.
 		SeedPath: "web/family.local.json",
 	}
 }
@@ -139,6 +149,7 @@ func applyEnvOverrides(cfg *Configuration) {
 	if v := os.Getenv("ADMIN_EMAILS"); v != "" {
 		cfg.Auth.Admins = splitList(v)
 	}
+	setBool(&cfg.Auth.OpenSuggestions, "OPEN_SUGGESTIONS")
 
 	setBool(&cfg.Privacy.GuestNamesOnly, "GUEST_NAMES_ONLY")
 	setStr(&cfg.SeedPath, "SEED_PATH")

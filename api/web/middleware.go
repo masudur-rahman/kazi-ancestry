@@ -59,7 +59,8 @@ func RequireAuth(next http.Handler) http.Handler {
 }
 
 // RequireContributor rejects requests that may not contribute: anonymous → 401,
-// authenticated viewers (not on the allowlist) → 403.
+// authenticated users who may not suggest → 403. Whether non-allowlisted viewers
+// may suggest is governed by Auth.OpenSuggestions (CanSuggest).
 func RequireContributor(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u := userFromContext(r.Context())
@@ -67,7 +68,7 @@ func RequireContributor(next http.Handler) http.Handler {
 			WriteError(w, http.StatusUnauthorized, "unauthorized", "login required")
 			return
 		}
-		if u.Role != "admin" && u.Role != "contributor" {
+		if !configs.KaziConfig.Auth.CanSuggest(u.Role) {
 			WriteError(w, http.StatusForbidden, "forbidden", "not allowed to contribute")
 			return
 		}
