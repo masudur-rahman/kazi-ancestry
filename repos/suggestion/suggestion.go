@@ -59,7 +59,11 @@ func (r *SQLSuggestionRepository) Add(s *models.Suggestion) error {
 func (r *SQLSuggestionRepository) UpdateStatus(id, status string) error {
 	r.logger.Infow("update suggestion status", "id", id, "status", status)
 	ctx := context.Background()
-	return r.db.ID(id).MustCols("status").UpdateOne(ctx, models.Suggestion{Status: status})
+	// Targeted column update: a struct UpdateOne re-writes the req-tagged columns
+	// (person_id, payload, submitted_by) as empty, wiping the suggestion. Update
+	// only the status column.
+	_, err := r.db.Exec(ctx, "UPDATE "+models.Suggestion{}.TableName()+" SET status=$1 WHERE id=$2", status, id)
+	return err
 }
 
 func (r *SQLSuggestionRepository) Delete(id string) error {
