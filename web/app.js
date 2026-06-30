@@ -474,8 +474,41 @@ const App = {
   zoomBy(f) { const s = this.state.scale, ns = Math.max(0.2, Math.min(2.4, s * f)); const r = this.vp ? this.vp.getBoundingClientRect() : { width: innerWidth, height: innerHeight }; const cx = r.width / 2, cy = r.height / 2, k = ns / s; this.state.scale = ns; this.state.tx = cx - (cx - this.state.tx) * k; this.state.ty = cy - (cy - this.state.ty) * k; this.applyTransform(); },
   zoomIn() { this.zoomBy(1.2); }, zoomOut() { this.zoomBy(1 / 1.2); },
   resetView() { const o = this.state.layout === "outline"; this.setState({ scale: o ? 0.95 : 0.78, tx: o ? 40 : 80, ty: 60 }); setTimeout(() => this.focusRoot(), 30); },
-  // fit/center reading zoom — fixed so apparent font stays constant regardless of expand count (tune live)
-  FIT_ZOOM: { tree: 0.91, outline: 1.07 },
+  // fit/center font math. F_MIN is the apparent-size readability floor (14px — set
+  // above a 12px norm because stacked Bengali conjuncts lose legibility faster).
+  // Node fonts are fixed px scaled by the stage transform, so apparent = base × scale.
+  F_MIN: 14,
+  _baseFont(layout) { return layout === "outline" ? 15.5 : 16; },
+  // Measure the canonical full layout (every node expanded) off-screen and unscaled.
+  // CFL ignores the current expansion, so the derived scale — and the apparent font —
+  // is constant no matter how many nodes happen to be open right now.
+  _measureCFL(layout) {
+    const saved = this.state.expanded, all = {};
+    this.people.forEach((p) => { if (this.childrenOf[p.id].length) all[p.id] = true; });
+    let inner;
+    this.state.expanded = all;
+    try { inner = layout === "outline" ? this.outlineNode(this.rootId) : this.node(this.rootId); }
+    finally { this.state.expanded = saved; }
+    const box = h("div", { style: { position: "absolute", left: "-99999px", top: "0", visibility: "hidden", "pointer-events": "none" } }, inner);
+    document.body.appendChild(box);
+    const r = inner.getBoundingClientRect();
+    document.body.removeChild(box);
+    return { w: r.width, h: r.height };
+  },
+  // Available canvas box for fitting, in screen px.
+  _fitBox(vr) {
+    const topBar = this._topbarH || 64, bottom = this.isMobile() ? 140 : 24, margin = 44;
+    return { topBar, bottom, margin, availW: Math.max(40, vr.width - margin * 2), availH: Math.max(40, vr.height - topBar - bottom - margin) };
+  },
+  // Apparent font at which a layout's CFL just fits the canvas — capped at the base
+  // size (never enlarge to fill). Caller applies the F_MIN floor.
+  _fitFont(layout, vr, cfl) {
+    cfl = cfl || this._measureCFL(layout);
+    if (!cfl.w || !cfl.h) return this._baseFont(layout);
+    const b = this._fitBox(vr);
+    const fitScale = Math.min(b.availW / cfl.w, b.availH / cfl.h, 1);
+    return this._baseFont(layout) * fitScale;
+  },
   // transpose of the tree anchor: branch is the tree rotated 90° (parent centred against its
   // whole subtree), so tree's top-centre becomes branch's left-centre. Preserves current scale.
   focusRoot() {
@@ -495,14 +528,45 @@ const App = {
     }
     this.applyTransform();
   },
-  // Snap to a fixed reading zoom and centre the root. Scale is constant (not fit-to-all)
-  // so the apparent font stays the same no matter how many nodes are expanded; big trees
-  // overflow intentionally (pan to explore). focusRoot centres root preserving the scale.
+  // The stage scale that renders a layout at its fit font: f1 = tree fit (floored at
+  // F_MIN); branch f2 = clamp(branch fit, F_MIN, f1). Shared by fit/center and the
+  // fit applied when switching modes, so both land on the same size.
+  _fitScale(layout, vr) {
+    const f1 = Math.max(this.F_MIN, this._fitFont("tree", vr));
+    let font = f1;
+    if (layout === "outline") font = Math.min(Math.max(this.F_MIN, this._fitFont("outline", vr)), f1);
+    return Math.max(0.2, Math.min(2.4, font / this._baseFont(layout)));
+  },
+  // fit/center: size the font from the CFL (constant across expansion) and re-centre
+  // the root via fitAnchor. If the CFL can't fit at F_MIN the font holds at F_MIN and
+  // the tree overflows — pan to explore.
   fitView() {
-    if (!this.vp || !this._fitEl) return this.resetView();
-    const s = this.FIT_ZOOM[this.state.layout === "outline" ? "outline" : "tree"];
-    this.setState({ scale: s });
-    setTimeout(() => this.focusRoot(), 30);
+    if (!this.vp || (this.state.layout !== "tree" && this.state.layout !== "outline")) return this.resetView();
+    const scale = this._fitScale(this.state.layout === "outline" ? "outline" : "tree", this.vp.getBoundingClientRect());
+    this.setState({ scale });
+    setTimeout(() => this.fitAnchor(), 30);
+  },
+  // Place the root after a fit. Tree and branch anchors are transposes of each other
+  // (centre↔centre): tree root at top-centre (0.5, lead), branch root at left-centre
+  // (lead, 0.5), where lead is the fraction that clears the top bar. Because they
+  // transpose, the §4 switch remap maps one layout's fit state exactly onto the other's
+  // — so fit/center right after a tree↔branch switch moves nothing. Big trees overflow
+  // past the anchor and are explored by panning.
+  fitAnchor() {
+    if (!this.vp) return;
+    const vr = this.vp.getBoundingClientRect(), b = this._fitBox(vr);
+    const lead = (b.topBar + b.margin) / vr.height;
+    if (this.state.layout === "outline") this._anchorRootAt(lead, 0.5);
+    else this._anchorRootAt(0.5, lead);
+  },
+  // Pan so the root's centre sits at fraction (fx, fy) of the canvas, at current scale.
+  _anchorRootAt(fx, fy) {
+    if (!this.vp) return;
+    const el = this.vp.querySelector('[data-pid="' + this.rootId + '"]'); if (!el) return;
+    const vr = this.vp.getBoundingClientRect(), er = el.getBoundingClientRect();
+    this.state.tx += (vr.left + fx * vr.width) - (er.left + er.width / 2);
+    this.state.ty += (vr.top + fy * vr.height) - (er.top + er.height / 2);
+    this.applyTransform();
   },
 
   // ---- touch pan / pinch (tree) ----
@@ -748,9 +812,25 @@ const App = {
   ctlLayout(full) {
     const a = this.state.accent, l = this.state.layout;
     const go = (v) => {
+      const prev = this.state.layout;
       if (v === "explorer" && this.state.colSel == null) this.state.colSel = this.state.selectedId != null ? this.state.selectedId : this.rootId;
-      this.setState({ layout: v, menu: false });
-      if (v !== "explorer") requestAnimationFrame(() => this.focusRoot());
+      // tree↔branch: preserve the view (§4.1). Capture the root's screen fraction, swap
+      // the font (f1/f2), then remap the anchor (vertical fraction ↔ horizontal). Because
+      // the fit anchors are transposes (see fitAnchor), a remap from a fit state lands on
+      // the target's fit state. Entering a canvas from explorer just fits.
+      const swap = prev !== v && (prev === "tree" || prev === "outline") && (v === "tree" || v === "outline");
+      let frac = null;
+      const patch = { layout: v, menu: false };
+      if (swap && this.vp) {
+        const el = this.vp.querySelector('[data-pid="' + this.rootId + '"]');
+        if (el) { const vr = this.vp.getBoundingClientRect(), er = el.getBoundingClientRect();
+          frac = { x: (er.left + er.width / 2 - vr.left) / vr.width, y: (er.top + er.height / 2 - vr.top) / vr.height }; }
+        patch.scale = this._fitScale(v, this.vp.getBoundingClientRect());
+      }
+      this.setState(patch);
+      if (v === "explorer") return;
+      if (swap && frac) requestAnimationFrame(() => this._anchorRootAt(frac.y, frac.x)); // transpose
+      else requestAnimationFrame(() => this.fitView());
     };
     return this._grp([["tree", "নকশা"], ["outline", "তালিকা"], ["explorer", "স্তর"]].map(([v, t]) => this._seg(t, l === v, () => go(v), a, full)));
   },
@@ -1073,7 +1153,6 @@ const App = {
     // tree & branch share one pan/zoom canvas (drag to pan, wheel/pinch to zoom)
     if (layout === "tree" || layout === "outline") {
       const inner = layout === "tree" ? this.node(this.rootId) : this.outlineNode(this.rootId);
-      this._fitEl = inner;
       const content = layout === "tree"
         ? h("div", { style: { padding: "118px 160px 200px" } }, inner)
         : h("div", { style: { padding: "120px 120px 140px 60px", display: "inline-block" } }, inner);
