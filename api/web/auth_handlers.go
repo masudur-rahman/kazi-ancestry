@@ -135,7 +135,7 @@ const devLoginPage = `<!doctype html>
   label{display:block;font-size:12.5px;margin:12px 0 5px;color:#5c4a2c}
   input,select{width:100%;box-sizing:border-box;padding:9px 11px;font-size:14px;
     border:1px solid #cdb988;border-radius:8px;background:#fdf9ee;color:#3b2f21;font-family:inherit}
-  button{margin-top:20px;width:100%;padding:11px;font-size:14.5px;font-weight:600;
+  button{margin-top:20px;width:100%;padding:11px;font-size:14.5px;font-weight:600;font-family:inherit;
     border:1px solid #9c4326;border-radius:8px;background:#9c4326;color:#fbf5e7;cursor:pointer}
   button:hover{background:#85371f}
   .note{margin-top:14px;font-size:11px;color:#a8854a;text-align:center}
