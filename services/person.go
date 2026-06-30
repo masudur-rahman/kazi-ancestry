@@ -8,6 +8,8 @@ type PersonService interface {
 	Get(id string) (*models.Person, error)
 	Create(person *models.Person) error
 	Update(id string, person *models.Person) error
+	// Reorder sets the sibling order under parentID to orderedIDs.
+	Reorder(parentID string, orderedIDs []string) error
 	Delete(id string) error
 	Count() (int, error)
 	// Seed imports the tree from seedPath if the table is empty (idempotent).

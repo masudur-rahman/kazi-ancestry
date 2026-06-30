@@ -44,6 +44,7 @@ func NewRouter(webDir string) chi.Router {
 		r.Group(func(r chi.Router) {
 			r.Use(RequireAdmin)
 			r.Post("/people", HandleCreatePerson)
+			r.Post("/people/reorder", HandleReorderPerson)
 			r.Put("/people/{id}", HandleUpdatePerson)
 			r.Delete("/people/{id}", HandleDeletePerson)
 

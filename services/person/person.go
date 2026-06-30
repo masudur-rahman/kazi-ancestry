@@ -23,6 +23,33 @@ func (s *personService) List() ([]models.Person, error)           { return s.rep
 func (s *personService) Get(id string) (*models.Person, error)    { return s.repo.GetByID(id) }
 func (s *personService) Update(id string, p *models.Person) error { return s.repo.Update(id, p) }
 
+// Reorder rewrites the sibling order under parentID. It only accepts ids that
+// are actually children of parentID (a guard against cross-parent shuffles),
+// then writes each id's new 0-based position.
+func (s *personService) Reorder(parentID string, orderedIDs []string) error {
+	people, err := s.repo.List()
+	if err != nil {
+		return err
+	}
+	children := map[string]bool{}
+	for _, p := range people {
+		if p.ParentID != nil && *p.ParentID == parentID {
+			children[p.ID] = true
+		}
+	}
+	for _, id := range orderedIDs {
+		if !children[id] {
+			return fmt.Errorf("%q is not a child of %q", id, parentID)
+		}
+	}
+	for i, id := range orderedIDs {
+		if err := s.repo.SetPosition(id, i); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Create adds a person, generating a stable slug id (shortest unique against
 // existing ids) when one isn't supplied — the runtime path for new people.
 func (s *personService) Create(p *models.Person) error {

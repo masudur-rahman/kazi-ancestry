@@ -80,3 +80,27 @@ func HandleDeletePerson(w http.ResponseWriter, r *http.Request) {
 	}
 	WriteJSON(w, http.StatusOK, map[string]string{"id": id})
 }
+
+// reorderRequest is the new sibling order under a common parent.
+type reorderRequest struct {
+	ParentID string   `json:"parentId"`
+	Order    []string `json:"order"`
+}
+
+// HandleReorderPerson rewrites the sibling order under a parent (admin-only).
+func HandleReorderPerson(w http.ResponseWriter, r *http.Request) {
+	var req reorderRequest
+	if err := ReadJSON(r, &req); err != nil {
+		WriteError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if req.ParentID == "" || len(req.Order) == 0 {
+		WriteError(w, http.StatusBadRequest, "bad_request", "parentId and order are required")
+		return
+	}
+	if err := all.GetServices().Person.Reorder(req.ParentID, req.Order); err != nil {
+		WriteServiceError(w, "reorder_error", err)
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]string{"parentId": req.ParentID})
+}

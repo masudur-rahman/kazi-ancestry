@@ -8,8 +8,8 @@ import "encoding/json"
 // hold SQL NULL and scan cleanly back into Go strings.
 type Person struct {
 	ID       string  `db:"id,pk" json:"id"`
-	ParentID *string `db:"parent_id" json:"parentId"` // nil = root (stored NULL)
-	Position int     `db:"position" json:"position"`  // order among siblings (0-based)
+	ParentID *string `db:"parent_id" json:"parentId"`    // nil = root (stored NULL)
+	Position int     `db:"position,req" json:"position"` // order among siblings (0-based); req so styx writes 0 (else NULL sorts last)
 	Name     string  `db:"name,req" json:"name"`
 	Origin   string  `db:"origin,req" json:"origin"`
 	Alias    string  `db:"alias,req" json:"alias"`
