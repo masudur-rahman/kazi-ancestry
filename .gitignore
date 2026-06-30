@@ -4,6 +4,7 @@ node_modules/
 .env
 .claude/settings.local.json
 bin/
+vendor
 coverage.out
 
 # local config may hold secrets; commit only the example
