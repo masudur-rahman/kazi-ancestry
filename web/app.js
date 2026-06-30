@@ -196,7 +196,7 @@ const App = {
       user: boot.user || null,
       openSuggestions: !!boot.openSuggestions,
       suggestions: (boot.suggestions || []).map((row) => this._sugFromRow(row)),
-      modal: null, signin: null, form: this.blankForm(),
+      modal: null, signin: null, form: this.blankForm(), reorder: null,
       showInbox: false, inboxTab: "pending", showMine: false, mine: null,
       toast: "", menu: false, search: false, colSel: null,
       panelH: Math.max(200, Math.round(window.innerHeight * 0.42)), // mobile sheet height (drag-resizable)
@@ -206,7 +206,9 @@ const App = {
     this._pmove = (e) => this.onPanelResizeMove(e);
     this._pend = () => this.onPanelResizeEnd();
     window.addEventListener("mousemove", (e) => this._onMove(e));
-    window.addEventListener("mouseup", () => (this._pan = null));
+    // record whether the gesture moved (a pan) BEFORE clearing _pan, so the
+    // canvas click handler can tell a tap (close overlays) from a drag.
+    window.addEventListener("mouseup", () => { this._dragMoved = !!(this._pan && this._pan.moved); this._pan = null; });
     window.addEventListener("resize", () => { const m = this.isMobile(); this._w = window.innerWidth; if (m !== this.isMobile()) this.render(); else this.measureChrome(); });
     this.lockDown();
     this.render();
@@ -217,8 +219,7 @@ const App = {
 
   // Best-effort privacy deterrents (NOT real security — see README). Blocks
   // right-click, copy/cut/selection, drag, and the common devtools/save/print/
-  // view-source shortcuts, and blurs the page when it's hidden (screenshots,
-  // app-switcher previews, screen sharing).
+  // view-source shortcuts.
   lockDown() {
     const inField = (e) => { const t = e.target; return t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA"); };
     const stop = (e) => { e.preventDefault(); e.stopPropagation(); return false; };
@@ -233,10 +234,6 @@ const App = {
       if (mod && (k === "u" || k === "s" || k === "p" || k === "c" || k === "a")) return stop(e); // source/save/print/copy/select-all
       if (e.key === "PrintScreen") { try { navigator.clipboard && navigator.clipboard.writeText(""); } catch (x) {} return stop(e); }
     });
-    const blur = (on) => { document.body.style.filter = on ? "blur(26px)" : ""; };
-    document.addEventListener("visibilitychange", () => blur(document.hidden));
-    window.addEventListener("blur", () => blur(true));
-    window.addEventListener("focus", () => blur(false));
   },
 
   setState(patch) { Object.assign(this.state, patch); this.render(); },
@@ -294,6 +291,44 @@ const App = {
       .then((srv) => { if (srv && srv.id) this._reId(tmp, srv); })
       .catch((e) => this._apiErr(e));
     return tmp;
+  },
+  // ---- sibling reorder (staged draft) ----
+  // Reorder is a draft: ←/→ rearrange the live sibling order (tree previews it)
+  // without persisting. The admin then commits with "সম্পন্ন", or a contributor
+  // sends a single proposal — nothing is saved per keystroke.
+  startReorder(id) {
+    const p = this.byId[id]; if (!p || p.parentId == null) return;
+    const order = (this.childrenOf[p.parentId] || []).slice();
+    this.setState({ reorder: { parentId: p.parentId, focusId: id, orig: order } });
+  },
+  reorderFocus(id) { if (this.state.reorder) { this.state.reorder.focusId = id; this.render(); } },
+  // moveSibling shifts the focused sibling one slot in the draft (dir -1 = earlier,
+  // +1 = later) and re-renders so the tree shows the change immediately.
+  moveSibling(dir) {
+    const r = this.state.reorder; if (!r) return;
+    const arr = this.childrenOf[r.parentId];
+    const i = arr.indexOf(r.focusId), j = i + dir;
+    if (i < 0 || j < 0 || j >= arr.length) return;
+    arr.splice(i, 1); arr.splice(j, 0, r.focusId);
+    this.render();
+  },
+  // reorderCancel discards the draft, restoring the original sibling order.
+  reorderCancel() { const r = this.state.reorder; if (r) this.childrenOf[r.parentId] = r.orig.slice(); this.setState({ reorder: null }); },
+  // reorderDone commits the draft: admin persists immediately, contributor sends
+  // one proposal carrying the full before/after order.
+  reorderDone() {
+    const r = this.state.reorder; if (!r) return;
+    const order = (this.childrenOf[r.parentId] || []).slice();
+    if (!order.some((id, i) => id !== r.orig[i])) { this.setState({ reorder: null }); return; } // unchanged
+    if (this.isAdmin()) { this.reorderSiblings(r.parentId, order); this.toast("ক্রম পরিবর্তন করা হয়েছে"); }
+    else { this.submitSuggestion({ type: "reorder", parentId: r.parentId, parentName: this.byId[r.parentId].name, order: order, before: r.orig.slice() }); this.toast("প্রস্তাব পাঠানো হয়েছে"); }
+    this.setState({ reorder: null });
+  },
+  // reorderSiblings applies a new sibling order optimistically, then persists it.
+  reorderSiblings(parentId, order) {
+    order.forEach((cid, idx) => { if (this.byId[cid]) this.byId[cid].position = idx; });
+    this.commit();
+    this._api("POST", "/people/reorder", { parentId: parentId, order: order }).catch((e) => this._apiErr(e));
   },
   deletePerson(id) {
     if (this.childrenOf[id].length) return false;
@@ -398,11 +433,13 @@ const App = {
     const verb = status === "approved" ? "approve" : "reject";
     this._api("POST", "/suggestions/" + encodeURIComponent(sid) + "/" + verb).catch((e) => this._apiErr(e));
   },
-  approve(s) { if (s.type === "edit" && this.byId[s.targetId]) this.applyEdit(s.targetId, s.changes); else if (s.type === "add" && this.byId[s.parentId]) this.addPerson(s.parentId, s.fields); this.setStatus(s.id, "approved"); this.toast("অনুমোদন করা হয়েছে"); },
+  approve(s) { if (s.type === "edit" && this.byId[s.targetId]) this.applyEdit(s.targetId, s.changes); else if (s.type === "add" && this.byId[s.parentId]) this.addPerson(s.parentId, s.fields); else if (s.type === "reorder" && this.byId[s.parentId]) this.reorderSiblings(s.parentId, s.order); this.setStatus(s.id, "approved"); this.toast("অনুমোদন করা হয়েছে"); },
   reject(s) { this.setStatus(s.id, "rejected"); this.toast("প্রত্যাখ্যান করা হয়েছে"); },
   toggleInbox() {
     const opening = !this.state.showInbox;
-    this.setState({ showInbox: opening, showMine: false });
+    // detail panel and the drawers are mutually exclusive (same screen real estate)
+    if (opening && this.state.reorder) this.reorderCancel();
+    this.setState({ showInbox: opening, showMine: false, selectedId: opening ? null : this.state.selectedId });
     // Refresh the inbox from the server when an admin opens it.
     if (opening && this.isAdmin()) {
       this._api("GET", "/suggestions")
@@ -413,7 +450,8 @@ const App = {
   // toggleMine opens a contributor's own-suggestions panel, lazy-loading from the server.
   toggleMine() {
     const opening = !this.state.showMine;
-    this.setState({ showMine: opening, showInbox: false });
+    if (opening && this.state.reorder) this.reorderCancel();
+    this.setState({ showMine: opening, showInbox: false, selectedId: opening ? null : this.state.selectedId });
     if (opening && this.canSuggest()) {
       this.setState({ mine: null });
       this._api("GET", "/suggestions/mine")
@@ -436,6 +474,8 @@ const App = {
   zoomBy(f) { const s = this.state.scale, ns = Math.max(0.2, Math.min(2.4, s * f)); const r = this.vp ? this.vp.getBoundingClientRect() : { width: innerWidth, height: innerHeight }; const cx = r.width / 2, cy = r.height / 2, k = ns / s; this.state.scale = ns; this.state.tx = cx - (cx - this.state.tx) * k; this.state.ty = cy - (cy - this.state.ty) * k; this.applyTransform(); },
   zoomIn() { this.zoomBy(1.2); }, zoomOut() { this.zoomBy(1 / 1.2); },
   resetView() { const o = this.state.layout === "outline"; this.setState({ scale: o ? 0.95 : 0.78, tx: o ? 40 : 80, ty: 60 }); setTimeout(() => this.focusRoot(), 30); },
+  // fit/center reading zoom — fixed so apparent font stays constant regardless of expand count (tune live)
+  FIT_ZOOM: { tree: 0.91, outline: 1.07 },
   // transpose of the tree anchor: branch is the tree rotated 90° (parent centred against its
   // whole subtree), so tree's top-centre becomes branch's left-centre. Preserves current scale.
   focusRoot() {
@@ -455,24 +495,14 @@ const App = {
     }
     this.applyTransform();
   },
-  // Fit the rendered tree to the viewport and center it. The primary span is fit
-  // exactly; the cross axis may overflow (that's intentional — side data can clip):
-  //  · tree (top→bottom generations): fit the HEIGHT so first & last gen show.
-  //  · branch/outline (left→right): fit the WIDTH so the whole chain shows.
+  // Snap to a fixed reading zoom and centre the root. Scale is constant (not fit-to-all)
+  // so the apparent font stays the same no matter how many nodes are expanded; big trees
+  // overflow intentionally (pan to explore). focusRoot centres root preserving the scale.
   fitView() {
-    const vp = this.vp, el = this._fitEl;
-    if (!vp || !el) return this.resetView();
-    const vr = vp.getBoundingClientRect(), er = el.getBoundingClientRect(), s0 = this.state.scale;
-    const w = er.width / s0, hh = er.height / s0;
-    if (!w || !hh) return this.resetView();
-    // reserve the top bar, and on mobile the bottom floating controls, so the band
-    // we centre into is what's actually visible (last gen won't hide behind controls)
-    const top = this._topbarH || 0, bottom = this.isMobile() ? 140 : 24;
-    const availH = Math.max(80, vr.height - top - bottom), pad = 0.94;
-    const s = Math.max(0.2, Math.min(2.4, (this.state.layout === "outline" ? vr.width / w : availH / hh) * pad));
-    const ox = ((er.left - vr.left) - this.state.tx) / s0, oy = ((er.top - vr.top) - this.state.ty) / s0;
-    const tx = (vr.width - w * s) / 2 - ox * s, ty = top + (availH - hh * s) / 2 - oy * s;
-    this.setState({ scale: s, tx, ty });
+    if (!this.vp || !this._fitEl) return this.resetView();
+    const s = this.FIT_ZOOM[this.state.layout === "outline" ? "outline" : "tree"];
+    this.setState({ scale: s });
+    setTimeout(() => this.focusRoot(), 30);
   },
 
   // ---- touch pan / pinch (tree) ----
@@ -492,7 +522,7 @@ const App = {
       this.state.tx = this._pan.tx + dx; this.state.ty = this._pan.ty + dy; this.applyTransform();
     }
   },
-  _onTouchEnd(e) { if (e.touches.length === 0) { this._pan = null; this._pinch = null; } else if (e.touches.length === 1) { const t = e.touches[0]; this._pinch = null; this._pan = { x: t.clientX, y: t.clientY, tx: this.state.tx, ty: this.state.ty, moved: true }; } },
+  _onTouchEnd(e) { if (e.touches.length === 0) { this._dragMoved = !!((this._pan && this._pan.moved) || this._pinch); this._pan = null; this._pinch = null; } else if (e.touches.length === 1) { const t = e.touches[0]; this._pinch = null; this._pan = { x: t.clientX, y: t.clientY, tx: this.state.tx, ty: this.state.ty, moved: true }; } },
 
   // ---- mobile sheet resize (drag the grabber) ----
   onPanelResizeStart(e) {
@@ -537,12 +567,24 @@ const App = {
   _nodePos(id) { if (!this.vp) return null; const el = this.vp.querySelector('[data-pid="' + id + '"]'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; },
   _restorePos(id, keep) { if (!this.vp) return; const el = this.vp.querySelector('[data-pid="' + id + '"]'); if (!el) return; const r = el.getBoundingClientRect(); this.state.tx += keep.x - (r.left + r.width / 2); this.state.ty += keep.y - (r.top + r.height / 2); this.applyTransform(); },
   expandAncestors(id) { let cur = this.byId[id]; while (cur && cur.parentId != null) { this.state.expanded[cur.parentId] = true; cur = this.byId[cur.parentId]; } },
-  select(id) { if (this._pan && this._pan.moved) return; this.setState({ selectedId: id }); },
+  select(id) { if (this._pan && this._pan.moved) return; if (this.state.reorder && id !== this.state.reorder.focusId) this.reorderCancel(); this.setState({ selectedId: id, showInbox: false, showMine: false }); },
   // columns: clicking drills + opens detail; colSel is the column anchor so that
   // closing the detail panel does NOT collapse the drilled-in columns
-  colSelect(id) { this.state.colSel = id; this.setState({ selectedId: id }); },
+  colSelect(id) { this.state.colSel = id; this.setState({ selectedId: id, showInbox: false, showMine: false }); },
   goTo(id) { this.expandAncestors(id); this.state.colSel = id; this.setState({ selectedId: id, query: "", showInbox: false, search: false }); requestAnimationFrame(() => this.focusPerson(id, false)); },
-  closePanel() { this.setState({ selectedId: null }); },
+  closePanel() { if (this.state.reorder) this.reorderCancel(); this.setState({ selectedId: null }); },
+  // Empty-canvas tap closes the topmost open overlay (node clicks stopPropagation,
+  // so they never reach here). A drag-pan sets _dragMoved and is ignored. One
+  // overlay per tap, outermost-first, so the canvas behaves like a modal scrim.
+  _canvasTap() {
+    if (this._dragMoved) return;
+    const s = this.state;
+    if (s.modal) return;                                   // modal has its own scrim
+    if (s.search) return this.setState({ search: false });
+    if (s.showInbox) return this.toggleInbox();
+    if (s.showMine) return this.toggleMine();
+    if (s.selectedId != null) return this.closePanel();
+  },
   pathTo(id) { const out = []; let cur = this.byId[id]; while (cur) { out.unshift(cur.id); cur = cur.parentId != null ? this.byId[cur.parentId] : null; } return out; },
   focusPerson(id, top) {
     if (!this.vp) return;
@@ -619,11 +661,14 @@ const App = {
     const L = kids.length;
     const childCol = h("div", { style: { display: "flex", "flex-direction": "column" } },
       kids.map((cid, i) => {
+        // Vertical spine: each segment overshoots its row's 5px padding so it meets
+        // the neighbour's segment across the 10px inter-row gap — one continuous line,
+        // no break at junctions. First reaches down, last reaches up, middles span both.
         let vTop = "0", vH = "0", showV = true;
         if (L === 1) showV = false;
-        else if (i === 0) { vTop = "50%"; vH = "50%"; }
-        else if (i === L - 1) { vTop = "0"; vH = "50%"; }
-        else { vTop = "0"; vH = "100%"; }
+        else if (i === 0) { vTop = "50%"; vH = "calc(50% + 5px)"; }
+        else if (i === L - 1) { vTop = "-5px"; vH = "calc(50% + 5px)"; }
+        else { vTop = "-5px"; vH = "calc(100% + 10px)"; }
         const connector = h("div", { style: { position: "relative", width: "30px", flex: "none", "align-self": "stretch" } },
           h("div", { style: { position: "absolute", top: "calc(50% - 1px)", left: "0", width: "100%", height: "2px", background: conn } }),
           showV ? h("div", { style: { position: "absolute", left: "0", top: vTop, height: vH, width: "2px", background: conn } }) : null);
@@ -666,7 +711,7 @@ const App = {
   // ---- detail helpers ----
   fieldLabel(k) { return { name: "নাম", origin: "এলাকা", alias: "ডাকনাম", spouse: "স্বামী/স্ত্রী", birth: "জন্ম", death: "মৃত্যু", note: "মন্তব্য" }[k] || k; },
   fmtVal(k, v) { return v == null || v === "" ? "—" : String(v); },
-  relTime(t) { const d = Math.floor((Date.now() - t) / 1000); if (d < 60) return "এইমাত্র"; if (d < 3600) return Math.floor(d / 60) + " মিনিট আগে"; if (d < 86400) return Math.floor(d / 3600) + " ঘণ্টা আগে"; return new Date(t).toLocaleDateString(); },
+  relTime(t) { if (!t) return ""; const d = Math.floor((Date.now() - t) / 1000); if (d < 60) return "এইমাত্র"; if (d < 3600) return Math.floor(d / 60) + " মিনিট আগে"; if (d < 86400) return Math.floor(d / 3600) + " ঘণ্টা আগে"; return new Date(t).toLocaleDateString(); },
 
   // ---- topbar + controls ----
   _seg(label, active, onClick, activeBg, full) { const base = { padding: "6px 12px", "font-size": "13px", border: "none", "border-radius": "7px", cursor: "pointer", background: active ? activeBg : "transparent", color: active ? "#fbf5e7" : "#7d6740", "font-weight": active ? "600" : "400", transition: "all .15s" }; if (full) Object.assign(base, { flex: "1", padding: "10px 4px", "font-size": "14px", "text-align": "center" }); return h("button", { onClick, style: base }, label); },
@@ -725,6 +770,10 @@ const App = {
       [h("circle", { cx: "10", cy: "10", r: "6.5", fill: "none", stroke: "currentColor", "stroke-width": "2" }),
        h("line", { x1: "14.8", y1: "14.8", x2: "20", y2: "20", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round" })]);
   },
+  _menuIcon() {
+    return h("svg", { viewBox: "0 0 24 24", width: "20", height: "20", style: { display: "block" } },
+      [5, 12, 19].map((y) => h("line", { x1: "4", y1: y, x2: "20", y2: y, stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round" })));
+  },
   _expandBtn(dir, onClick, title) { const b = h("button", { onClick, title, style: { display: "flex", "align-items": "center", "justify-content": "center", width: "38px", height: "38px", border: "1px solid #cdb988", "border-radius": "9px", background: "#fbf6ea", color: "#5c4a2c", cursor: "pointer" } }, this._arrows(dir)); hover(b, "background:#f1e6cb"); return b; },
   ctlExpand() { return h("div", { style: { display: "flex", gap: "6px" } }, this._expandBtn("out", () => this.expandAll(), "সব খুলুন"), this._expandBtn("in", () => this.collapseAll(), "সব বন্ধ")); },
   ctlSwatches() { const accent = this.state.accent; return h("div", { style: { display: "flex", gap: "6px", "align-items": "center" } }, this.ACCENTS.map((c) => h("button", { title: "accent", onClick: () => this.setState({ accent: c }), style: { width: "22px", height: "22px", "border-radius": "50%", background: c, border: c === accent ? "2px solid #3b2f21" : "2px solid #fbf5e7", cursor: "pointer", "box-shadow": "0 1px 3px rgba(80,55,20,.3)" } }))); },
@@ -739,9 +788,15 @@ const App = {
   topbar() {
     const barStyle = { position: "absolute", top: "0", left: "0", right: "0", display: "flex", "align-items": "center", "justify-content": "space-between", "z-index": "20", background: "linear-gradient(180deg, rgba(244,236,214,.97), rgba(244,236,214,.85))", "backdrop-filter": "blur(6px)", "border-bottom": "1px solid #d4c096" };
     if (this.isMobile()) {
-      const searchBtn = h("button", { title: "খুঁজুন", onClick: () => { const open = !this.state.search; this.setState({ search: open }); if (open) requestAnimationFrame(() => { const el = this.root.querySelector('[data-fkey="search"]'); if (el) el.focus(); }); }, style: { display: "flex", "align-items": "center", "justify-content": "center", flex: "none", width: "40px", height: "40px", border: "1px solid #cdb988", "border-radius": "9px", background: this.state.search ? "#f1e6cb" : "#fbf6ea", color: "#5c4a2c", cursor: "pointer" } }, this._searchIcon());
-      return h("div", { ref: (el) => (this.topbarEl = el), style: Object.assign({}, barStyle, { gap: "10px", padding: "10px 14px", "flex-wrap": "wrap" }) }, this.logo(true),
-        h("div", { style: { display: "flex", "align-items": "center", gap: "8px", flex: "none", "flex-wrap": "wrap", "justify-content": "flex-end" } }, searchBtn, this.account()));
+      const searchBtn = h("button", { title: "খুঁজুন", onClick: () => { const open = !this.state.search; this.setState({ search: open, menu: false }); if (open) requestAnimationFrame(() => { const el = this.root.querySelector('[data-fkey="search"]'); if (el) el.focus(); }); }, style: { display: "flex", "align-items": "center", "justify-content": "center", flex: "none", width: "40px", height: "40px", border: "1px solid #cdb988", "border-radius": "9px", background: this.state.search ? "#f1e6cb" : "#fbf6ea", color: "#5c4a2c", cursor: "pointer" } }, this._searchIcon());
+      // Secondary account actions (name, যাচাই, আমার প্রস্তাব, log in/out) collapse
+      // into this ⋯ menu so the bar fits 320px. Mode toggle lives in the bottom bar
+      // (always tappable); a dot flags an admin's pending suggestions while collapsed.
+      const pending = this.state.user && this.isAdmin() ? this.state.suggestions.filter((s) => s.status === "pending").length : 0;
+      const menuBtn = h("button", { title: "মেনু", onClick: () => this.setState({ menu: !this.state.menu, search: false }), style: { position: "relative", display: "flex", "align-items": "center", "justify-content": "center", flex: "none", width: "40px", height: "40px", border: "1px solid #cdb988", "border-radius": "9px", background: this.state.menu ? "#f1e6cb" : "#fbf6ea", color: "#5c4a2c", cursor: "pointer" } },
+        this._menuIcon(), pending ? h("span", { style: { position: "absolute", top: "-4px", right: "-4px", "min-width": "16px", height: "16px", padding: "0 4px", "border-radius": "8px", background: "#9c4326", color: "#fbf5e7", "font-size": "10.5px", "font-weight": "700", "line-height": "16px", "text-align": "center" } }, pending) : null);
+      return h("div", { ref: (el) => (this.topbarEl = el), style: Object.assign({}, barStyle, { gap: "10px", padding: "10px 14px" }) }, this.logo(true),
+        h("div", { style: { display: "flex", "align-items": "center", gap: "8px", flex: "none" } }, searchBtn, menuBtn));
     }
     return h("div", { ref: (el) => (this.topbarEl = el), style: Object.assign({}, barStyle, { gap: "18px", padding: "12px 20px", "flex-wrap": "wrap" }) },
       this.logo(false),
@@ -756,6 +811,34 @@ const App = {
     const card = h("div", { onMouseDown: (e) => e.stopPropagation(), style: { position: "absolute", top: (this._topbarH + 8) + "px", left: "12px", right: "12px", background: "#fbf6ea", border: "1px solid #d4c096", "border-radius": "14px", "box-shadow": "0 16px 40px rgba(70,48,18,.24)", "z-index": "46", padding: "14px", animation: "kzpop .16s ease" } },
       this.ctlSearch(true));
     return h("div", { onMouseDown: () => this.setState({ search: false }), style: { position: "absolute", inset: "0", "z-index": "44" } }, card);
+  },
+
+  // mobile overflow menu (⋯): the account actions that don't fit the narrow bar.
+  menuSheet() {
+    if (!this.isMobile() || !this.state.menu) return null;
+    const accent = this.state.accent, user = this.state.user;
+    const close = () => (this.state.menu = false);
+    const item = (label, onClick, opts) => {
+      opts = opts || {};
+      const b = h("button", { onClick: () => { close(); onClick(); }, style: { display: "flex", "align-items": "center", "justify-content": "space-between", gap: "10px", width: "100%", "text-align": "left", padding: "11px 13px", "font-size": "14.5px", border: "1px solid " + (opts.accent ? "#9c4326" : "#e2d2a8"), "border-radius": "9px", background: opts.accent ? accent : "#fdf9ee", color: opts.accent ? "#fbf5e7" : "#5c4a2c", cursor: "pointer", "font-weight": opts.accent ? "600" : "500" } },
+        label, opts.badge != null ? h("span", { style: { background: "#fbf5e7", color: "#9c4326", "font-size": "11.5px", "font-weight": "700", "border-radius": "9px", padding: "1px 7px" } }, opts.badge) : null);
+      hover(b, opts.accent ? "" : "background:#f1e6cb"); return b;
+    };
+    const rows = [];
+    if (!user) {
+      rows.push(item("লগ ইন", () => this.login(), { accent: true }));
+    } else {
+      const role = this.role();
+      const badge = { admin: ["কর্তৃপক্ষ", "#9c4326"], viewer: ["দর্শক", "#8a6d4a"] }[role];
+      rows.push(h("div", { style: { display: "flex", "align-items": "center", gap: "8px", padding: "4px 2px 10px" } },
+        h("span", { style: { "font-size": "15px", "font-weight": "600", color: "#3b2f21" } }, user.name),
+        badge ? h("span", { style: { "font-size": "10.5px", "letter-spacing": ".5px", color: "#fbf5e7", background: badge[1], "border-radius": "10px", padding: "2px 7px" } }, badge[0]) : null));
+      if (this.isAdmin()) rows.push(item("যাচাই", () => this.toggleInbox(), { badge: this.state.suggestions.filter((s) => s.status === "pending").length || null }));
+      if (this.canSuggest() && !this.isAdmin()) rows.push(item("আমার প্রস্তাব", () => this.toggleMine()));
+      rows.push(item("লগ আউট", () => this.signOut()));
+    }
+    const card = h("div", { onMouseDown: (e) => e.stopPropagation(), style: { position: "absolute", top: (this._topbarH + 8) + "px", right: "12px", width: "min(260px, calc(100vw - 24px))", display: "flex", "flex-direction": "column", gap: "8px", background: "#fbf6ea", border: "1px solid #d4c096", "border-radius": "14px", "box-shadow": "0 16px 40px rgba(70,48,18,.24)", "z-index": "47", padding: "12px", animation: "kzpop .16s ease" } }, rows);
+    return h("div", { onMouseDown: () => this.setState({ menu: false }), style: { position: "absolute", inset: "0", "z-index": "44" } }, card);
   },
 
   account() {
@@ -832,13 +915,35 @@ const App = {
 
     let actions = null;
     if (canAct) {
+      // sibling reorder is a staged draft (see startReorder): ←/→ rearrange the
+      // live order (the tree previews it); admin commits with সম্পন্ন, a
+      // contributor sends one proposal — nothing saved per keystroke.
+      const sib = s.parentId != null ? (this.childrenOf[s.parentId] || []) : [];
+      const inReorder = this.state.reorder && this.state.reorder.parentId === s.parentId;
+      let reorder = null;
+      if (sib.length > 1 && !inReorder) {
+        reorder = h("div", { style: { "margin-top": "18px" } }, actBtn("ভাইবোনদের ক্রম বদলান", () => this.startReorder(id), "plain"));
+      } else if (inReorder) {
+        const focus = this.state.reorder.focusId, fi = sib.indexOf(focus);
+        const mvBtn = (label, dir, dis) => { const b = h("button", { onClick: dis ? null : () => this.moveSibling(dir), disabled: dis, title: dir < 0 ? "আগে সরান" : "পরে সরান", style: { padding: "7px 16px", "font-size": "17px", "line-height": "1", border: "1px solid #cdb988", "border-radius": "8px", background: dis ? "#f1ead7" : "#fdf9ee", color: dis ? "#bcae87" : "#5c4a2c", cursor: dis ? "default" : "pointer", opacity: dis ? ".55" : "1" } }, label); if (!dis) hover(b, "background:#f1e6cb"); return b; };
+        const list = h("div", { style: { display: "flex", "flex-direction": "column", gap: "4px", margin: "12px 0" } }, sib.map((cid, idx) => { const on = cid === focus; return h("button", { onClick: () => this.reorderFocus(cid), style: { display: "flex", "align-items": "center", gap: "9px", width: "100%", "text-align": "left", border: "1px solid " + (on ? accent : "#e2d2a8"), background: on ? this.hexA(accent, 0.1) : "#fdf9ee", "border-radius": "8px", padding: "7px 10px", cursor: "pointer", "font-size": "14px", color: "#3b2f21" } }, h("span", { style: { "font-size": "12px", color: "#9c8456", width: "15px", "flex-shrink": "0" } }, idx + 1), this.byId[cid].name); }));
+        const changed = sib.some((cid, i) => cid !== this.state.reorder.orig[i]);
+        reorder = h("div", { style: { "margin-top": "18px", "padding-top": "16px", "border-top": "1px dashed #d4c096" } },
+          h("div", { style: { "font-size": "12px", "letter-spacing": ".4px", color: "#a8854a", "margin-bottom": "10px" } }, "ক্রম সাজান — “" + this.byId[focus].name + "” সরান"),
+          h("div", { style: { display: "flex", gap: "8px", "align-items": "center" } }, mvBtn("←", -1, fi <= 0), mvBtn("→", 1, fi >= sib.length - 1), h("span", { style: { "font-size": "12.5px", color: "#9c8456" } }, (fi + 1) + " / " + sib.length)),
+          list,
+          h("div", { style: { display: "flex", gap: "8px" } }, actBtn(admin ? "সম্পন্ন" : "প্রস্তাব পাঠান", () => this.reorderDone(), changed ? "primary" : "plain"), actBtn("বাতিল", () => this.reorderCancel(), "plain")));
+      }
+      // while staging a reorder, show only the reorder controls so an edit/add
+      // (which would commit + re-sort) can't silently drop the draft
       actions = h("div", { style: { "margin-top": "24px", "padding-top": "18px", "border-top": "1px solid #e6d8b8" } },
-        h("div", { style: { "font-size": "12px", "letter-spacing": ".4px", color: "#a8854a", "margin-bottom": "11px" } }, admin ? "তথ্য সংশোধন" : "সংশোধনের প্রস্তাব"),
-        h("div", { style: { display: "flex", "flex-wrap": "wrap", gap: "8px" } },
+        inReorder ? null : h("div", { style: { "font-size": "12px", "letter-spacing": ".4px", color: "#a8854a", "margin-bottom": "11px" } }, admin ? "তথ্য সংশোধন" : "সংশোধনের প্রস্তাব"),
+        inReorder ? null : h("div", { style: { display: "flex", "flex-wrap": "wrap", gap: "8px" } },
           actBtn(admin ? "সংশোধন" : "সংশোধনের প্রস্তাব", () => this.onEdit(), "primary"),
           actBtn(admin ? "সন্তান যোগ" : "সন্তানের প্রস্তাব", () => this.onAddChild(), "plain"),
           s.parentId != null ? actBtn(admin ? "ভাইবোন যোগ" : "ভাইবোনের প্রস্তাব", () => this.onAddSibling(), "plain") : null,
-          admin && kidIds.length === 0 ? actBtn("মুছুন", () => this.onDelete(), "danger") : null));
+          admin && kidIds.length === 0 ? actBtn("মুছুন", () => this.onDelete(), "danger") : null),
+        reorder);
     } else if (!this.state.user) {
       // Guest: invite login to contribute (read-only otherwise).
       actions = h("div", { style: { "margin-top": "24px", "padding-top": "18px", "border-top": "1px solid #e6d8b8" } },
@@ -848,7 +953,7 @@ const App = {
     const mobile = this.isMobile();
     const shell = mobile
       ? { position: "absolute", left: "0", right: "0", bottom: "0", height: this.state.panelH + "px", "max-height": "92%", background: "linear-gradient(180deg,#fbf6ea,#f6efde)", "border-top": "1px solid #d4c096", "border-radius": "18px 18px 0 0", "box-shadow": "0 -16px 44px rgba(70,48,18,.2)", "z-index": "50", overflow: "auto", padding: "8px 20px 28px", animation: "kzpop .18s ease" }
-      : { position: "absolute", top: "0", right: "0", bottom: "0", width: "352px", background: "linear-gradient(180deg,#fbf6ea,#f6efde)", "border-left": "1px solid #d4c096", "box-shadow": "-14px 0 40px rgba(70,48,18,.14)", "z-index": "30", overflow: "auto", padding: "22px 24px 30px" };
+      : { position: "absolute", top: (this._topbarH || 64) + "px", right: "0", bottom: "0", width: "420px", background: "linear-gradient(180deg,#fbf6ea,#f6efde)", "border-left": "1px solid #d4c096", "box-shadow": "-16px 0 44px rgba(70,48,18,.18)", "z-index": "30", overflow: "auto", padding: "22px 22px 30px" };
     const handle = mobile ? h("div", { onMouseDown: (e) => this.onPanelResizeStart(e), ref: (el) => el && el.addEventListener("touchstart", (ev) => this.onPanelResizeStart(ev), { passive: false }), style: { "touch-action": "none", cursor: "ns-resize", padding: "6px 0 12px", margin: "-2px -20px 2px", display: "flex", "justify-content": "center" } }, h("div", { style: { width: "46px", height: "5px", "border-radius": "3px", background: "#cbb88f" } })) : null;
     return h("div", { class: "kz-scroll", ref: (el) => (this.panelEl = el), style: shell }, handle,
       h("div", { style: { display: "flex", "justify-content": "space-between", "align-items": "flex-start", gap: "10px" } }, h("div", { style: { "font-size": "12px", "letter-spacing": ".4px", color: "#a8854a" } }, "প্রজন্ম " + (this.depthOf[id] + 1)), h("button", { onClick: () => this.closePanel(), style: { border: "none", background: "transparent", color: "#9c8456", "font-size": "22px", cursor: "pointer", "line-height": "1", padding: "0" } }, "×")),
@@ -874,8 +979,11 @@ const App = {
     opts = opts || {};
     const accent = this.state.accent;
     let rows = [], title = "", typeLabel = "";
-    if (x.type === "edit") { typeLabel = "সংশোধন"; title = x.targetName; rows = Object.keys(x.changes || {}).map((k) => ({ field: this.fieldLabel(k), old: this.fmtVal(k, x.before ? x.before[k] : ""), nw: this.fmtVal(k, x.changes[k]) })); }
-    else { typeLabel = "নতুন ব্যক্তি"; title = x.fields.name + "  ·  " + x.parentName + "-এর অধীনে"; rows = ["origin", "alias", "spouse", "birth", "death", "note"].filter((k) => x.fields[k]).map((k) => ({ field: this.fieldLabel(k), old: "—", nw: this.fmtVal(k, x.fields[k]) })); if (rows.length === 0) rows = [{ field: "নাম", old: "—", nw: x.fields.name }]; }
+    if (x.type === "edit") { typeLabel = "সংশোধন"; title = x.targetName || "—"; rows = Object.keys(x.changes || {}).map((k) => ({ field: this.fieldLabel(k), old: this.fmtVal(k, x.before ? x.before[k] : ""), nw: this.fmtVal(k, x.changes[k]) })); }
+    else if (x.type === "reorder") { typeLabel = "ক্রম পরিবর্তন"; title = (x.parentName || "") + "-এর সন্তানদের ক্রম"; const nm = (ids) => (ids || []).map((cid) => (this.byId[cid] && this.byId[cid].name) || cid).join(", "); rows = [{ field: "ক্রম", old: nm(x.before), nw: nm(x.order) }]; }
+    else if (x.type === "add" || x.fields) { const fields = x.fields || {}; typeLabel = "নতুন ব্যক্তি"; title = (fields.name || "—") + "  ·  " + (x.parentName || "") + "-এর অধীনে"; rows = ["origin", "alias", "spouse", "birth", "death", "note"].filter((k) => fields[k]).map((k) => ({ field: this.fieldLabel(k), old: "—", nw: this.fmtVal(k, fields[k]) })); if (rows.length === 0) rows = [{ field: "নাম", old: "—", nw: fields.name || "—" }]; }
+    // unknown/legacy/empty-payload suggestion — render a minimal card instead of throwing
+    else { typeLabel = "প্রস্তাব"; title = x.targetName || "—"; rows = []; }
     let footer;
     if (opts.actions) {
       const approve = h("button", { onClick: () => this.approve(x), style: { flex: "1", padding: "8px 0", "font-size": "13.5px", border: "none", "border-radius": "8px", background: "#5c6b4a", color: "#fbf5e7", cursor: "pointer", "font-weight": "500" } }, "অনুমোদন"); hover(approve, "background:#4d5a3e");
@@ -892,11 +1000,13 @@ const App = {
       footer);
   },
 
-  // shared drawer shell + header for the inbox and my-suggestions panels
+  // shared drawer shell + header for the inbox and my-suggestions panels.
+  // The detail panel reuses these exact dimensions (see panel()) so both modals
+  // are the same box — they're mutually exclusive, so whichever opens looks alike.
   _drawerShell() {
     return this.isMobile()
       ? { position: "absolute", left: "0", right: "0", bottom: "0", "max-height": "86%", background: "linear-gradient(180deg,#fbf6ea,#f4ecd9)", "border-top": "1px solid #d4c096", "border-radius": "18px 18px 0 0", "box-shadow": "0 -16px 44px rgba(70,48,18,.2)", "z-index": "55", overflow: "auto", padding: "16px 18px 26px", animation: "kzpop .18s ease" }
-      : { position: "absolute", top: "0", right: "0", bottom: "0", width: "420px", background: "linear-gradient(180deg,#fbf6ea,#f4ecd9)", "border-left": "1px solid #d4c096", "box-shadow": "-16px 0 44px rgba(70,48,18,.18)", "z-index": "45", overflow: "auto", padding: "22px 22px 30px" };
+      : { position: "absolute", top: (this._topbarH || 64) + "px", right: "0", bottom: "0", width: "420px", background: "linear-gradient(180deg,#fbf6ea,#f4ecd9)", "border-left": "1px solid #d4c096", "box-shadow": "-16px 0 44px rgba(70,48,18,.18)", "z-index": "45", overflow: "auto", padding: "22px 22px 30px" };
   },
   _drawerHeader(title, onClose) {
     return h("div", { style: { display: "flex", "justify-content": "space-between", "align-items": "center", gap: "10px", "margin-bottom": "16px" } },
@@ -968,7 +1078,7 @@ const App = {
         ? h("div", { style: { padding: "118px 160px 200px" } }, inner)
         : h("div", { style: { padding: "120px 120px 140px 60px", display: "inline-block" } }, inner);
       const stage = h("div", { ref: (el) => (this.stage = el), style: { transform: "translate(" + this.state.tx + "px," + this.state.ty + "px) scale(" + this.state.scale + ")", "transform-origin": "0 0", "will-change": "transform" } }, content);
-      const vp = h("div", { onMouseDown: (e) => this.onPanStart(e), style: { position: "absolute", inset: "0", overflow: "hidden", cursor: "grab", background: bg, "touch-action": "none" } }, stage);
+      const vp = h("div", { onMouseDown: (e) => this.onPanStart(e), onClick: () => this._canvasTap(), style: { position: "absolute", inset: "0", overflow: "hidden", cursor: "grab", background: bg, "touch-action": "none" } }, stage);
       this.vp = vp;
       vp.addEventListener("wheel", (e) => this._onWheel(e), { passive: false });
       vp.addEventListener("touchstart", (e) => this._onTouchStart(e), { passive: false });
@@ -979,9 +1089,9 @@ const App = {
     this.vp = null;
     // explorer / columns. Desktop: reserve the detail-panel width on the right so
     // the last columns stay reachable. Mobile: master/detail above the sheet.
-    const rightInset = this.state.selectedId != null && !this.isMobile() ? 352 : 0;
+    const rightInset = this.state.selectedId != null && !this.isMobile() ? 420 : 0;
     const bottomInset = this.isMobile() && this.state.selectedId != null ? this.state.panelH + "px" : "0";
-    return h("div", { style: { position: "absolute", inset: "0", background: bg } }, h("div", { class: "kz-scroll", ref: (el) => (this.columnsEl = el), style: { position: "absolute", top: this._topbarH + "px", left: "0", right: rightInset + "px", bottom: bottomInset, "overflow-x": "auto", "overflow-y": "hidden" } }, this.columnsView()));
+    return h("div", { onClick: () => this._canvasTap(), style: { position: "absolute", inset: "0", background: bg } }, h("div", { onClick: (e) => e.stopPropagation(), class: "kz-scroll", ref: (el) => (this.columnsEl = el), style: { position: "absolute", top: this._topbarH + "px", left: "0", right: rightInset + "px", bottom: bottomInset, "overflow-x": "auto", "overflow-y": "hidden" } }, this.columnsView()));
   },
 
   measureChrome() {
@@ -996,7 +1106,7 @@ const App = {
     this.columnsEl = null; this.panelEl = null;
     // Guest viewing: the tree always renders; logged-out visitors browse read-only.
     const frame = h("div", { style: { position: "fixed", inset: "0", background: "#e9ddc2", color: "#3b2f21", overflow: "hidden" } },
-      this.layoutLayer(), this.topbar(), this.searchSheet(), this.bottomLeft(), this.panel(), this.inbox(), this.mySuggestions(), this.modal(), this.toastEl());
+      this.layoutLayer(), this.topbar(), this.searchSheet(), this.menuSheet(), this.bottomLeft(), this.panel(), this.inbox(), this.mySuggestions(), this.modal(), this.toastEl());
 
     const a = document.activeElement; let fk = null, ss, se;
     if (a && a.dataset && a.dataset.fkey) { fk = a.dataset.fkey; ss = a.selectionStart; se = a.selectionEnd; }
