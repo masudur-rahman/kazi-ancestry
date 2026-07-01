@@ -36,6 +36,10 @@ var serveCmd = &cobra.Command{
 		} else {
 			logr.DefaultLogger.Infof("person table ready: %d people", n)
 		}
+		// Repair legacy rows that share a sibling position (idempotent).
+		if err := all.GetServices().Person.NormalizePositions(); err != nil {
+			log.Fatalln(err)
+		}
 
 		// Scrape-time domain gauges (people / suggestions by status).
 		svc := all.GetServices()

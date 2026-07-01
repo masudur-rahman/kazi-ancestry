@@ -50,6 +50,48 @@ func (s *personService) Reorder(parentID string, orderedIDs []string) error {
 	return nil
 }
 
+// NormalizePositions renumbers each parent's children to a contiguous 0-based
+// order, skipping any group that is already a clean 0..n-1 permutation. It's a
+// one-time repair for legacy rows that share a position (all 0 after the column
+// was added), which otherwise fall back to the id tiebreak. Idempotent: once a
+// group is contiguous it's left untouched, so repeat boots do nothing.
+func (s *personService) NormalizePositions() error {
+	people, err := s.repo.List()
+	if err != nil {
+		return err
+	}
+	byParent := map[string][]models.Person{}
+	for _, p := range people {
+		key := ""
+		if p.ParentID != nil {
+			key = *p.ParentID
+		}
+		byParent[key] = append(byParent[key], p)
+	}
+	for _, kids := range byParent {
+		// repo.List already returns (position, id) order, so kids is the target order.
+		contiguous := true
+		for i, k := range kids {
+			if k.Position != i {
+				contiguous = false
+				break
+			}
+		}
+		if contiguous {
+			continue
+		}
+		for i, k := range kids {
+			if k.Position == i {
+				continue
+			}
+			if err := s.repo.SetPosition(k.ID, i); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // Create adds a person, generating a stable slug id (shortest unique against
 // existing ids) when one isn't supplied — the runtime path for new people.
 func (s *personService) Create(p *models.Person) error {
@@ -62,17 +104,17 @@ func (s *personService) Create(p *models.Person) error {
 	}
 	taken := make(map[string]bool, len(people))
 	var parentName string
-	siblings := 0
+	maxPos := -1
 	for _, e := range people {
 		taken[e.ID] = true
 		if p.ParentID != nil && e.ID == *p.ParentID {
 			parentName = e.Name
 		}
-		if samePtr(e.ParentID, p.ParentID) {
-			siblings++
+		if samePtr(e.ParentID, p.ParentID) && e.Position > maxPos {
+			maxPos = e.Position
 		}
 	}
-	p.Position = siblings // append after existing siblings
+	p.Position = maxPos + 1 // append after existing siblings (max+1, not count, so a delete can't cause a collision)
 	if p.ID == "" {
 		p.ID = slug.Generate(p.Name, parentName, taken)
 	}

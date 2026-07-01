@@ -10,6 +10,9 @@ type PersonService interface {
 	Update(id string, person *models.Person) error
 	// Reorder sets the sibling order under parentID to orderedIDs.
 	Reorder(parentID string, orderedIDs []string) error
+	// NormalizePositions renumbers siblings to a contiguous 0-based order (repairs
+	// legacy rows sharing a position). Idempotent.
+	NormalizePositions() error
 	Delete(id string) error
 	Count() (int, error)
 	// Seed imports the tree from seedPath if the table is empty (idempotent).

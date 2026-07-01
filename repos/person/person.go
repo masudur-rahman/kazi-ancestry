@@ -34,8 +34,10 @@ func (r *SQLPersonRepository) List() ([]models.Person, error) {
 	ctx := context.Background()
 	var people []models.Person
 	// Order by sibling position so the tree renders in a stable, editable order
-	// (a bare UPDATE otherwise lets Postgres scan the edited row back last).
-	if err := r.db.OrderBy("position").FindMany(ctx, &people); err != nil {
+	// (a bare UPDATE otherwise lets Postgres scan the edited row back last). id is
+	// a deterministic tiebreak so tied positions (e.g. legacy rows all at 0) don't
+	// swap order between reads.
+	if err := r.db.OrderBy("position").OrderBy("id").FindMany(ctx, &people); err != nil {
 		return nil, err
 	}
 	return people, nil

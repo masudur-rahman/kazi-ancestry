@@ -253,9 +253,9 @@ const App = {
     const byId = {}, children = {};
     this.people.forEach((p) => { byId[p.id] = p; children[p.id] = []; });
     this.people.forEach((p) => { if (p.parentId != null && children[p.parentId]) children[p.parentId].push(p.id); });
-    // order siblings by their stored position; Array.sort is stable, so ties
-    // (e.g. un-reseeded rows all at 0) keep their original insertion order
-    Object.keys(children).forEach((pid) => { children[pid].sort((a, b) => (byId[a].position || 0) - (byId[b].position || 0)); });
+    // order siblings by their stored position; id is a deterministic tiebreak so
+    // ties (e.g. un-reseeded rows all at 0) don't swap order between reloads
+    Object.keys(children).forEach((pid) => { children[pid].sort((a, b) => (byId[a].position || 0) - (byId[b].position || 0) || (a < b ? -1 : a > b ? 1 : 0)); });
     const root = this.people.find((p) => p.parentId == null) || this.people[0];
     const depth = {}, desc = {};
     const dfs = (id, d) => { depth[id] = d; let t = 0; children[id].forEach((c) => { t += 1 + dfs(c, d + 1); }); desc[id] = t; return t; };
