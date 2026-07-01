@@ -529,12 +529,16 @@ const App = {
     this.applyTransform();
   },
   // The stage scale that renders a layout at its fit font: f1 = tree fit (floored at
-  // F_MIN); branch f2 = clamp(branch fit, F_MIN, f1). Shared by fit/center and the
-  // fit applied when switching modes, so both land on the same size.
+  // the readability floor); branch f2 = clamp(branch fit, floor, f1). On mobile the
+  // floor is dropped so the whole tree shrinks to fit the small screen (the 0.2 scale
+  // clamp still bounds tininess); desktop keeps the F_MIN reading floor + overflow.
+  // Shared by fit/center and the fit applied when switching modes, so both land on
+  // the same size.
   _fitScale(layout, vr) {
-    const f1 = Math.max(this.F_MIN, this._fitFont("tree", vr));
+    const floor = this.isMobile() ? 0 : this.F_MIN;
+    const f1 = Math.max(floor, this._fitFont("tree", vr));
     let font = f1;
-    if (layout === "outline") font = Math.min(Math.max(this.F_MIN, this._fitFont("outline", vr)), f1);
+    if (layout === "outline") font = Math.min(Math.max(floor, this._fitFont("outline", vr)), f1);
     return Math.max(0.2, Math.min(2.4, font / this._baseFont(layout)));
   },
   // fit/center: size the font from the CFL (constant across expansion) and re-centre
@@ -546,18 +550,25 @@ const App = {
     this.setState({ scale });
     setTimeout(() => this.fitAnchor(), 30);
   },
-  // Place the root after a fit. Tree and branch anchors are transposes of each other
-  // (centre↔centre): tree root at top-centre (0.5, lead), branch root at left-centre
-  // (lead, 0.5), where lead is the fraction that clears the top bar. Because they
-  // transpose, the §4 switch remap maps one layout's fit state exactly onto the other's
-  // — so fit/center right after a tree↔branch switch moves nothing. Big trees overflow
-  // past the anchor and are explored by panning.
+  // Place the root after a fit, at each layout's natural leading corner: tree grows
+  // downward so its root sits top-centre (root centre at 0.5, leadY); branch grows
+  // down-and-right so its root sits top-left (root's top-left corner at the margin) —
+  // no wasted top half. (These aren't transposes, so a fit right after a tree↔branch
+  // switch may shift slightly — placement is preferred over that symmetry.) Big trees
+  // overflow past the anchor and are explored by panning.
   fitAnchor() {
     if (!this.vp) return;
     const vr = this.vp.getBoundingClientRect(), b = this._fitBox(vr);
-    const lead = (b.topBar + b.margin) / vr.height;
-    if (this.state.layout === "outline") this._anchorRootAt(lead, 0.5);
-    else this._anchorRootAt(0.5, lead);
+    if (this.state.layout === "outline") {
+      // align the root's top-left corner to (margin, topBar+margin)
+      const el = this.vp.querySelector('[data-pid="' + this.rootId + '"]'); if (!el) return;
+      const er = el.getBoundingClientRect();
+      this.state.tx += (vr.left + b.margin) - er.left;
+      this.state.ty += (vr.top + b.topBar + b.margin) - er.top;
+      this.applyTransform();
+    } else {
+      this._anchorRootAt(0.5, (b.topBar + b.margin) / vr.height);
+    }
   },
   // Pan so the root's centre sits at fraction (fx, fy) of the canvas, at current scale.
   _anchorRootAt(fx, fy) {
