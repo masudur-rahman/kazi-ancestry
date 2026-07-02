@@ -202,6 +202,10 @@ const App = {
       panelH: Math.max(200, Math.round(window.innerHeight * 0.42)), // mobile sheet height (drag-resizable)
     };
 
+    // Restore the last view (layout, open nodes, zoom/pan, selection) so a refresh
+    // resumes where the user was instead of resetting to the default tree.
+    this._restored = this._restoreView();
+
     this.root = document.getElementById("app");
     this._pmove = (e) => this.onPanelResizeMove(e);
     this._pend = () => this.onPanelResizeEnd();
@@ -212,10 +216,41 @@ const App = {
     window.addEventListener("resize", () => { const m = this.isMobile(); this._w = window.innerWidth; if (m !== this.isMobile()) this.render(); else this.measureChrome(); });
     this.lockDown();
     this.render();
-    setTimeout(() => this.focusPerson(this.rootId, true), 80);
+    // A restored view carries its own saved tx/ty/scale — don't recentre over it.
+    if (!this._restored) setTimeout(() => this.focusPerson(this.rootId, true), 80);
   },
 
   isMobile() { return (this._w || window.innerWidth) <= 760; },
+
+  VIEW_KEY: "kz.view",
+  // Persist the current view (throttled — pan fires applyTransform continuously).
+  _saveView() {
+    if (this._saveT) return;
+    this._saveT = setTimeout(() => {
+      this._saveT = null;
+      const s = this.state;
+      store.write(this.VIEW_KEY, { layout: s.layout, expanded: s.expanded, scale: s.scale, tx: s.tx, ty: s.ty, selectedId: s.selectedId, colSel: s.colSel });
+    }, 150);
+  },
+  // Merge a saved view over the freshly-built defaults. Returns true if applied.
+  // Drops ids that no longer exist and clamps the zoom; bails on anything malformed.
+  _restoreView() {
+    const v = store.read(this.VIEW_KEY, null);
+    if (!v || typeof v !== "object") return false;
+    const s = this.state, ok = (id) => id != null && !!this.byId[id];
+    if (v.layout === "tree" || v.layout === "outline" || v.layout === "explorer") s.layout = v.layout;
+    if (v.expanded && typeof v.expanded === "object") {
+      const e = {};
+      Object.keys(v.expanded).forEach((id) => { if (v.expanded[id] && ok(id)) e[id] = true; });
+      s.expanded = e;
+    }
+    if (typeof v.scale === "number") s.scale = Math.max(0.2, Math.min(2.4, v.scale));
+    if (typeof v.tx === "number") s.tx = v.tx;
+    if (typeof v.ty === "number") s.ty = v.ty;
+    if (ok(v.selectedId)) s.selectedId = v.selectedId;
+    if (ok(v.colSel)) s.colSel = v.colSel;
+    return true;
+  },
 
   // Best-effort privacy deterrents (NOT real security — see README). Blocks
   // right-click, copy/cut/selection, drag, and the common devtools/save/print/
@@ -236,7 +271,7 @@ const App = {
     });
   },
 
-  setState(patch) { Object.assign(this.state, patch); this.render(); },
+  setState(patch) { Object.assign(this.state, patch); this._saveView(); this.render(); },
 
   // IME-safe input handlers: avoid rebuilding the DOM mid-composition (Avro/phonetic),
   // which would otherwise destroy the input node and reset the keyboard each keystroke.
@@ -467,7 +502,7 @@ const App = {
   darken(hex, amt) { const c = this.hx(hex), f = (v) => Math.round(v * (1 - amt)); return "rgb(" + f(c[0]) + "," + f(c[1]) + "," + f(c[2]) + ")"; },
 
   // ---- pan / zoom (tree only) ----
-  applyTransform() { if (this.stage) this.stage.style.transform = "translate(" + this.state.tx + "px," + this.state.ty + "px) scale(" + this.state.scale + ")"; },
+  applyTransform() { if (this.stage) this.stage.style.transform = "translate(" + this.state.tx + "px," + this.state.ty + "px) scale(" + this.state.scale + ")"; this._saveView(); },
   onPanStart(e) { if (e.button !== 0) return; this._pan = { x: e.clientX, y: e.clientY, tx: this.state.tx, ty: this.state.ty, moved: false }; },
   _onMove(e) { if (!this._pan) return; const dx = e.clientX - this._pan.x, dy = e.clientY - this._pan.y; if (Math.abs(dx) + Math.abs(dy) > 3) this._pan.moved = true; this.state.tx = this._pan.tx + dx; this.state.ty = this._pan.ty + dy; this.applyTransform(); },
   _onWheel(e) { e.preventDefault(); const s = this.state.scale, ns = Math.max(0.2, Math.min(2.4, s * (1 + -e.deltaY * 0.0014))); const r = this.vp.getBoundingClientRect(); const cx = e.clientX - r.left, cy = e.clientY - r.top, k = ns / s; this.state.scale = ns; this.state.tx = cx - (cx - this.state.tx) * k; this.state.ty = cy - (cy - this.state.ty) * k; this.applyTransform(); },
